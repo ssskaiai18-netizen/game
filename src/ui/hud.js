@@ -76,7 +76,7 @@ export class Hud {
     const hpFrac = p.hp / p.maxHp;
     // portrait chip
     panel(ctx, x - 4, y - 4, w + 8, 40, { fill: 'rgba(8,10,16,0.72)', border: '#2c3448', inner: false });
-    text(ctx, p.char.name.toUpperCase(), x + 1, y + 5, { size: 7, color: '#cfd8e6' });
+    text(ctx, p.name.toUpperCase().slice(0, 10), x + 1, y + 5, { size: 7, color: '#cfd8e6' });
     bar(ctx, x + 60, y, w - 60, 7, hpFrac, {
       fg: hpFrac > 0.5 ? '#e8485f' : hpFrac > 0.25 ? '#ff8a3a' : '#ff2a4a',
     });
@@ -89,12 +89,12 @@ export class Hud {
       // 50% and 100% thresholds marked
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.fillRect(x + 0.5 + (w - 1) * 0.5, y + 16, 1, 6);
-      text(ctx, p.ultMeter >= 100 ? 'MAHORAGA' : p.ultMeter >= 50 ? 'AGITO READY' : 'TEN SHADOWS', x + w + 6, y + 21, {
+      text(ctx, !p.ultimate ? `ULT ${Math.floor(ultFrac * 100)}% · LOCKED` : p.ultMeter >= 100 ? 'MAHORAGA' : p.ultMeter >= 50 ? 'AGITO READY' : 'TEN SHADOWS', x + w + 6, y + 21, {
         size: 6,
         color: p.ultMeter >= 100 ? '#ffd166' : p.ultMeter >= 50 ? '#a79bff' : '#6a7488',
       });
     } else {
-      text(ctx, ultFrac >= 1 ? 'ULTIMATE READY' : `ULT ${Math.floor(ultFrac * 100)}%`, x + w + 6, y + 21, {
+      text(ctx, !p.ultimate ? `ULT ${Math.floor(ultFrac * 100)}% · LOCKED` : ultFrac >= 1 ? 'ULTIMATE READY' : `ULT ${Math.floor(ultFrac * 100)}%`, x + w + 6, y + 21, {
         size: 6,
         color: ultFrac >= 1 ? '#ffd166' : '#8b98b0',
       });
