@@ -52,6 +52,9 @@ export const HUB_NPCS = [
   {
     id: 'gojo', name: 'Satoru Gojo', role: 'story', x: 566, y: 470, facingX: 1, wander: false, charId: 'gojo',
   },
+  {
+    id: 'sukuna', name: 'Ryomen Sukuna', role: 'story', x: 640, y: 300, facingX: -1, wander: false, charId: 'sukuna',
+  },
 ];
 
 export const HUB_DECOR = [

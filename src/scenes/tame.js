@@ -26,7 +26,7 @@ export class TameScene extends ArenaScene {
     const def = this.def;
     this.createWorld({ arena: { x: 0, y: 26, w: 640, h: 322 }, theme: 'taming', decor: [], obstacles: [] });
     this.createPlayer({
-      charId: this.params.charId || this.game.selectedChar || 'megumi',
+      charId: this.params.charId || (this.game.save.data.custom?.created ? 'custom' : 'megumi'),
       x: 96,
       y: 200,
       mods: defaultMods(),

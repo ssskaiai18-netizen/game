@@ -215,6 +215,22 @@ export function drawHumanoid(ctx, spec) {
   limb(ctx, -0.5, hipY, 7, 3, -legAng, bottom, true, skin);
   limb(ctx, 1.5, hipY, 7, 3, legAng * 0.9, tintColor(L.bottomDark || L.bottom, tint), true, skin);
 
+  // Heian form: a second pair of arms on the same rig
+  if (L.fourArms) {
+    ctx.save();
+    ctx.translate(-0.5, shoulderY + 3);
+    ctx.rotate(pose.armB + 0.55 + Math.sin(t * 7) * 0.12);
+    R(ctx, 0, -1.3, 6.5, 2.6, topDark);
+    R(ctx, 5.5, -1.3, 2, 2.6, skin);
+    ctx.restore();
+    ctx.save();
+    ctx.translate(1, shoulderY + 4);
+    ctx.rotate(pose.armF - 0.6 - Math.sin(t * 7 + 1) * 0.12);
+    R(ctx, 0, -1.3, 6.5, 2.6, tintColor(L.topLight || L.top, tint));
+    R(ctx, 5.5, -1.3, 2, 2.6, skin);
+    ctx.restore();
+  }
+
   // back arm
   ctx.save();
   ctx.translate(0.5, shoulderY + 1);
@@ -286,6 +302,13 @@ export function drawHumanoid(ctx, spec) {
     R(ctx, -1, -1.6, 2, 3.2, '#2b2530');
     R(ctx, 1, -1, 14, 2, '#d7e3f0');
     R(ctx, 1, -1, 14, 0.8, '#ffffff');
+    ctx.restore();
+  } else if (L.weapon === 'knife') {
+    ctx.save();
+    ctx.translate(7, 0);
+    ctx.rotate(pose.weapon - 0.3);
+    R(ctx, -1, -1.2, 2.4, 2.4, '#2b2530');
+    R(ctx, 1.2, -0.8, 6, 1.6, '#d7e3f0');
     ctx.restore();
   } else if (L.weapon === 'claw') {
     R(ctx, 7, -2.4, 2.4, 1, '#ffe9b0');

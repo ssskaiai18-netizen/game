@@ -9,6 +9,7 @@ import { text, panel, wrapText, VerticalMenu, screenShade } from '../ui/ui.js';
 import { input } from '../core/input.js';
 import { clamp, dist, formatNum } from '../core/util.js';
 import { defaultMods } from '../data/upgrades.js';
+import { applyTrainingCredit } from '../data/techniques.js';
 
 const KUSAKABE = {
   id: 'kusakabe',
@@ -50,7 +51,8 @@ export class SparScene extends ArenaScene {
     const def = isChar ? CHARACTERS[oppId] : KUSAKABE;
     this.def = def;
     this.createWorld({ arena: { x: 0, y: 26, w: 640, h: 322 }, theme: 'training', decor: [{ type: 'rim', x: 20, y: 320, w: 600, h: 3, color: '#4a4030' }], obstacles: [] });
-    this.createPlayer({ charId: this.params.charId || this.game.selectedChar || 'yuji', x: 120, y: 200, mods: defaultMods() });
+    this.createPlayer({ charId: this.params.charId || (this.game.save.data.custom?.created ? 'custom' : 'yuji'), x: 120, y: 200, mods: defaultMods() });
+    const npcDef = def;
     this.world.safeMode = false;
 
     const npc = new Entity(this.world, {
@@ -79,6 +81,7 @@ export class SparScene extends ArenaScene {
     npc.dmgMult = 0.72 + npc.skill * 0.35;
     npc.aiTimer = 0.8;
     npc.spawnT = 0.4;
+    npc.domainAbility = def.domain || null;
     this.world.addActor(npc);
     this.npc = npc;
     this.state = 'intro';
@@ -124,19 +127,15 @@ export class SparScene extends ArenaScene {
       const reward = 12;
       save.data.tributeCurrency += reward;
       save.data.stats.kills++;
-      const profile = save.data.sorcerer;
-      if (profile && this.opponentId === profile.technique) {
-        profile.trainingWins++;
-        profile.mastery++;
-        if (profile.unlocked < 4) {
-          profile.unlocked++;
-          this.trainingReward = `Unlocked ${CHARACTERS[profile.technique].abilities[profile.unlocked - 1].name}`;
-        } else if (profile.trainingWins === 3) this.trainingReward = 'Ultimate unlocked';
-        else if (profile.trainingWins === 4 && CHARACTERS[profile.technique].domain) this.trainingReward = 'Domain unlocked';
-        else this.trainingReward = `Technique mastery ${profile.mastery}`;
+      // Training credit: unlocks the next ability of the player's OWN technique.
+      if (save.data.custom?.created) {
+        const unlocked = applyTrainingCredit(save, this.params.trainer || null);
+        this.trainingUnlock = unlocked;
+        if (unlocked) this.game.toast(`Training complete — unlocked: ${unlocked.name}`, { color: '#7cf0a0', life: 4 });
+      } else {
+        save.data.mastery[save.data.lastChar || 'yuji'] = (save.data.mastery[save.data.lastChar || 'yuji'] || 0) + 1;
+        save.save();
       }
-      save.data.mastery[save.data.lastChar || 'yuji'] = (save.data.mastery[save.data.lastChar || 'yuji'] || 0) + 1;
-      save.save();
       this.reward = reward;
     }
     if (!this.npc.dead) {
@@ -184,8 +183,8 @@ export class SparScene extends ArenaScene {
         text(ctx, k, 150, 132 + i * 16, { size: 7, color: '#8b98b0' });
         text(ctx, `${v}`, 490, 132 + i * 16, { size: 7, align: 'right', color: '#e8eef8' });
       });
-      if (this.trainingReward) text(ctx, this.trainingReward, 320, 211, { size: 7, align: 'center', color: '#7cf0a0' });
       if (this.result === 'win') text(ctx, `Training reward: +${this.reward} 呪`, 320, 222, { size: 8, align: 'center', color: '#ffd166' });
+      if (this.result === 'win' && this.trainingUnlock) text(ctx, `Unlocked: ${this.trainingUnlock.name}`, 320, 234, { size: 8, align: 'center', color: '#7cf0a0' });
       text(ctx, 'Click / Enter to return to the hub', 320, 246, { size: 7, align: 'center', color: '#93a0b8' });
     }
   }

@@ -215,6 +215,30 @@ export function drawDomainScenery(ctx, id, t, cam) {
       const y = 60 + ((i * 53 + t * 19) % 240);
       ctx.fillRect(x, y, 46, 1);
     }
+  } else if (id === 'incomplete_shrine') {
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = '#12060a';
+    ctx.fillRect(cam.x, cam.y, 640, 360);
+    for (let i = 0; i < 34; i++) {
+      const x = (i * 67 + Math.sin(t + i) * 8) % 660;
+      const y = 40 + ((i * 43) % 290);
+      ctx.globalAlpha = 0.16 + (i % 4) * 0.07;
+      ctx.fillStyle = i % 3 ? '#3a0a14' : '#c0273a';
+      ctx.fillRect(x, y, 2 + (i % 3), 2);
+    }
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = '#c0273a';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath();
+      ctx.arc(320, 180, 36 + i * 30 + Math.sin(t * 1.6 + i) * 4, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = '#1a0508';
+    ctx.fillRect(296, 58, 48, 10);
+    ctx.fillRect(306, 68, 6, 42);
+    ctx.fillRect(328, 68, 6, 42);
   } else if (id === 'unlimited_void') {
     ctx.globalAlpha = 0.8;
     ctx.fillStyle = '#05060f';

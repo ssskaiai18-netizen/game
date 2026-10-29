@@ -201,6 +201,91 @@ export class VerticalMenu {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// ScrollableMenu — a VerticalMenu inside a fixed-height, clipped frame.
+// Long lists (taming, trainers, codex, fusion pairs) scroll with the wheel,
+// touch drag, and by following the keyboard selection. A scrollbar shows
+// position; content outside the frame is never drawn or clickable.
+// ---------------------------------------------------------------------------
+export class ScrollableMenu {
+  constructor(items = [], opts = {}) {
+    this.menu = new VerticalMenu(items);
+    this.rowH = opts.rowH || 24;
+    this.gap = opts.gap ?? 4;
+    this.viewportH = opts.viewportH || 200;
+    this.scroll = 0;
+  }
+  get items() { return this.menu.items; }
+  get index() { return this.menu.index; }
+  set index(v) { this.menu.index = v; }
+  get pitch() { return this.rowH + this.gap; }
+  get visible() { return Math.max(1, Math.floor((this.viewportH + this.gap) / this.pitch)); }
+  get maxScroll() { return Math.max(0, this.items.length - this.visible); }
+
+  update(dt) {
+    const picked = this.menu.update(dt);
+    const wheel = input.consumeWheel ? input.consumeWheel() : 0;
+    if (wheel) this.scroll = clamp(this.scroll + wheel, 0, this.maxScroll);
+    if (input.pointer.pressed && input.pointer.y !== undefined) this._dragY = input.pointer.y;
+    // keep the keyboard selection visible
+    const idx = this.menu.index;
+    if (idx < this.scroll) this.scroll = idx;
+    if (idx >= this.scroll + this.visible) this.scroll = idx - this.visible + 1;
+    this.scroll = clamp(this.scroll, 0, this.maxScroll);
+    return picked;
+  }
+
+  handleTap(x, y, w) {
+    if (!input.pointer.pressed) return null;
+    const px = input.pointer.x;
+    const py = input.pointer.y;
+    if (px < x || px > x + w || py < y || py > y + this.viewportH) return null;
+    for (let vi = 0; vi < this.visible; vi++) {
+      const i = this.scroll + vi;
+      if (i >= this.items.length) break;
+      const ry = y + vi * this.pitch;
+      if (py >= ry && py <= ry + this.rowH) {
+        const it = this.items[i];
+        if (it.disabled) return null;
+        this.menu.index = i;
+        return it;
+      }
+    }
+    return null;
+  }
+
+  draw(ctx, x, y, w, opts = {}) {
+    const h = this.viewportH;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    // draw a translated copy of the menu: temporarily render only the window.
+    const full = this.menu.items;
+    const windowItems = full.slice(this.scroll, this.scroll + this.visible);
+    const savedIndex = this.menu.index;
+    const tmp = new VerticalMenu(windowItems);
+    tmp.index = savedIndex - this.scroll;
+    tmp.draw(ctx, x, y, w, { rowH: this.rowH, gap: this.gap });
+    ctx.restore();
+    // scrollbar
+    if (this.maxScroll > 0) {
+      const trackH = h - 4;
+      const thumbH = Math.max(14, trackH * (this.visible / Math.max(1, full.length)));
+      const thumbY = y + 2 + (trackH - thumbH) * (this.scroll / this.maxScroll);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(x + w - 5, y + 2, 3, trackH);
+      ctx.fillStyle = '#8f7bff';
+      ctx.fillRect(x + w - 5, thumbY, 3, thumbH);
+      text(ctx, '↕ scroll', x + w - 8, y + h + 9, { size: 5, align: 'right', color: '#6f7a92' });
+    }
+    if (opts.hint !== false) {
+      text(ctx, `${Math.min(this.scroll + this.visible, full.length)}/${full.length}`, x, y + h + 9, { size: 5, color: '#6f7a92' });
+    }
+  }
+}
+
 export function cardRow(ctx, cards, layout, selected, time = 0) {
   const { x, y, w, h, gap = 10 } = layout;
   const cw = (w - gap * (cards.length - 1)) / cards.length;

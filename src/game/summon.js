@@ -4,42 +4,65 @@
 // ---------------------------------------------------------------------------
 
 import { Entity } from './entity.js';
-import { SHIKIGAMI, AGITO, getSummon } from '../data/shikigami.js';
+import { SHIKIGAMI, AGITO, getSummon, getFusionDef, canSummonAgito } from '../data/shikigami.js';
+export { canSummonAgito };
 import { castAbility } from './combat.js';
 import { clamp, dist } from '../core/util.js';
 
 const ADAPT_CATS = ['physical', 'cut', 'blunt', 'fire', 'electric', 'water', 'projectile', 'area', 'technique', 'domain'];
 
+export const MAX_SHADOW_COPIES = 8;
+export const MAX_DOMAIN_SUMMONS = 10;
+
 export function summonShikigami(world, owner, id, opts = {}) {
-  const def = getSummon(id);
+  const def = opts.defOverride || getSummon(id);
   if (!def) return null;
   const mods = owner.mods || {};
-  // one instance of each normal shikigami at a time
+  const inGarden = world.domain?.id === 'chimera_shadow_garden' && world.domain.owner === owner;
+  let shadowCopy = !!opts.shadowCopy;
+  // one instance of each normal shikigami at a time — except in the Garden,
+  // where re-summoning an active shadow produces a temporary black copy.
   if (!opts.allowDuplicate && world.summons.some((s) => s.summonId === id && !s.dead)) {
-    world.fx.text(owner.x, owner.y - 36, 'ALREADY SUMMONED', { color: '#a79bff', scale: 0.75, life: 0.7 });
-    return null;
-  }
-  // Shadow copies never displace pre-existing summons. A strict per-entity
-  // cap also covers multi-creature summons such as Divine Dogs.
-  const limit = opts.shadowCopy ? 10 : 5 + (mods.summonExtra || 0);
-  const activeCount = world.summons.filter((s) => !s.dead).length;
-  if (activeCount >= limit) {
-    if (opts.shadowCopy) {
-      world.fx.text(owner.x, owner.y - 36, 'SHADOW LIMIT', { color: '#a79bff', life: 0.7 });
+    if (inGarden) shadowCopy = true;
+    else {
+      world.fx.text(owner.x, owner.y - 36, 'ALREADY SUMMONED', { color: '#a79bff', scale: 0.75, life: 0.7 });
       return null;
     }
-    const oldest = world.summons.find((s) => !s.dead && !s.isUltimateSummon);
-    if (oldest) world.dismissSummon(oldest, false);
   }
-  const remaining = limit - world.summons.filter((s) => !s.dead).length;
-  const count = Math.min(remaining, (def.count || 1) + (opts.extra || 0));
+  if (shadowCopy) {
+    const copies = world.summons.filter((s) => !s.dead && s.isShadowCopy).length;
+    if (copies >= MAX_SHADOW_COPIES) {
+      world.fx.text(owner.x, owner.y - 36, 'SHADOW LIMIT', { color: '#a79bff', scale: 0.75, life: 0.7 });
+      return null;
+    }
+  }
+  // limit total summons (performance cap; higher inside the Garden)
+  const activeCount = world.summons.filter((s) => !s.dead).length;
+  const cap = inGarden ? MAX_DOMAIN_SUMMONS : 5 + (mods.summonExtra || 0);
+  if (activeCount >= cap) {
+    const oldestCopy = world.summons.find((s) => !s.dead && s.isShadowCopy);
+    if (oldestCopy) world.dismissSummon(oldestCopy, false);
+    else world.dismissSummon(world.summons.find((s) => !s.dead), false);
+  }
+  const count = (def.count || 1) + (opts.extra || 0);
   const created = [];
   for (let i = 0; i < count; i++) {
     const ang = (i / Math.max(1, count)) * Math.PI * 2 + world.time;
     const sx = owner.x + Math.cos(ang) * (18 + i * 4);
     const sy = owner.y + Math.sin(ang) * 12 + 6;
     const pal = def.pal;
-    const e = new Entity(world, {
+    // Entity pooling: shadow copies reuse pooled entities (see world.dismissSummon).
+    let pooled = null;
+    if (shadowCopy && world.shadowPool && world.shadowPool.length) {
+      pooled = world.shadowPool.pop();
+      Object.assign(pooled, {
+        dead: false, removed: false, deathT: 0, ability: null, phase: null, phaseT: 0,
+        vx: 0, vy: 0, knockVx: 0, knockVy: 0, stunT: 0, rootT: 0, slowT: 0, invulnT: 0,
+        hitstunT: 0, counterActive: 0, reinforced: 0, markStacks: 0, markT: 0, bleedT: 0, burnT: 0,
+        cdMap: {}, abilityAngle: 0, effectsDone: false, hitsDone: 0, divergentState: null, transformT: 0,
+      });
+    }
+    const e = pooled || new Entity(world, {
       team: owner.team,
       name: def.name,
       kind: 'summon',
@@ -58,14 +81,24 @@ export function summonShikigami(world, owner, id, opts = {}) {
       lifetime: (def.duration || 14) * (mods.summonDurMult || 1) * (owner.masterySummonBonus || 1),
       auraColor: def.pal?.light || '#a79bff',
     });
+    if (pooled) {
+      e.team = owner.team; e.name = def.name; e.kind = 'summon'; e.brain = 'summon';
+      e.x = clamp(sx, world.arena.x + 10, world.arena.x + world.arena.w - 10);
+      e.y = clamp(sy, world.arena.y + 24, world.arena.y + world.arena.h - 10);
+      e.radius = (def.rig === 'maxElephant' ? 12 : 7) * (def.scale || 1);
+      e.maxHp = e.hp = Math.round((def.hp || 80) * (mods.summonHpMult || 1));
+      e.speed = e.baseSpeed = (def.speed || 100) * (owner.mods?.summonSpeedMult || 1);
+      e.scale = def.scale || 1;
+      e.abilities = def.abilities; e.ai = def.ai;
+      e.lifetime = (def.duration || 14) * (mods.summonDurMult || 1) * (owner.masterySummonBonus || 1);
+      e.totalityPair = false; e.isUltimateSummon = false; e.adapt = null; e.adapts = false;
+    }
     e.isSummon = true;
     e.owner = owner;
     e.summonId = id;
-    e.shadowCopy = !!opts.shadowCopy;
-    if (e.shadowCopy) e.pal = { main: '#10101a', dark: '#050509', light: '#252037', accent: '#10101a' };
     e.role = def.role;
     e.rig = def.rig;
-    if (!e.shadowCopy) e.pal = def.pal;
+    e.pal = def.pal;
     e.maxLifetime = e.lifetime;
     e.spawnT = 0.4;
     e.dmgMult = (owner.dmgMult || 1) * 0.85 * (opts.dmgMult || 1) *
@@ -88,6 +121,15 @@ export function summonShikigami(world, owner, id, opts = {}) {
     if (id === 'divineDogs' && count > 1) {
       e.totalityPair = true;
       e.dmgMult *= 0.85;
+    }
+    if (opts.fusionOf) { e.isFusionSummon = true; e.fusionOf = opts.fusionOf; }
+    if (shadowCopy) {
+      e.isShadowCopy = true;
+      e.pal = { main: '#0a0a12', dark: '#05050a', light: '#3b2a8a', accent: '#5b4bd6' };
+      e.dmgMult *= 0.6;
+      const remain = world.domain ? Math.max(1, world.domain.dur - world.domain.t) : 6;
+      e.lifetime = Math.min(e.lifetime, remain);
+      e.maxLifetime = e.lifetime;
     }
     world.addActor(e);
     created.push(e);
@@ -165,6 +207,30 @@ export function spawnUltimateSummon(world, owner, id) {
   });
   world.scene?.onUltimateSummon?.(e, id);
   return e;
+}
+
+export function summonFusion(world, owner, ab) {
+  const pair = owner.fusionPair || (owner.isPlayer ? null : ['toad', 'rabbitEscape']);
+  const owned = owner.owned || world.game?.save?.data?.unlocks?.shikigami || {};
+  const aId = pair?.[0];
+  const bId = pair?.[1];
+  if (!aId || !bId || aId === bId) {
+    world.fx.text(owner.x, owner.y - 36, 'CHOOSE TWO SHADOWS (MEGUMI)', { color: '#c9a2ff', scale: 0.75, life: 0.9 });
+    return null;
+  }
+  if (owner.isPlayer && !(owned[aId] && owned[bId])) {
+    world.fx.text(owner.x, owner.y - 36, 'BOTH SHADOWS MUST BE TAMED', { color: '#ff8a8a', scale: 0.75, life: 0.9 });
+    world.audio?.play('deny');
+    return null;
+  }
+  const def = getFusionDef(aId, bId);
+  if (!def) return null;
+  const created = summonShikigami(world, owner, def.id, { defOverride: def, allowDuplicate: false, fusionOf: [aId, bId] });
+  if (created?.length) {
+    world.fx.text(owner.x, owner.y - 48, def.name.toUpperCase(), { color: '#c9a2ff', scale: 1, life: 1.3 });
+    world.fx.flash('#3b2a8a', 0.18);
+  }
+  return created;
 }
 
 export function commandSummons(world, owner, ab) {

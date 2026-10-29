@@ -8,10 +8,12 @@ import { input } from '../core/input.js';
 import { clamp, dist, TAU, formatNum } from '../core/util.js';
 import { HUB_ARENA, HUB_DECOR, HUB_OBSTACLES, HUB_NPCS, DUMMY_SPOTS, TRIBUTE_TRACKS, PORTAL_POS, SHRINE_POS, KOGANE_POS, TRAINING_BOARD } from '../data/hub.js';
 import { CHARACTERS, PLAYABLE_ORDER } from '../data/characters.js';
+import { TECHNIQUES, TRAINERS, progressionFor } from '../data/techniques.js';
+import { getFusionDef, FUSIONS } from '../data/shikigami.js';
 import { SHIKIGAMI, SHIKIGAMI_ORDER, TOTALITY, AGITO } from '../data/shikigami.js';
 import { ARCS, DIFFICULTIES, DIALOGUE, isArcUnlocked } from '../data/story.js';
 import { drawHumanoid, humanoidPose, PROPS } from '../render/sprites.js';
-import { text, panel, bar, wrapText, VerticalMenu, screenShade, keyHint, FONT, cardRow } from '../ui/ui.js';
+import { text, panel, bar, wrapText, VerticalMenu, ScrollableMenu, screenShade, keyHint, FONT, cardRow } from '../ui/ui.js';
 import { defaultMods } from '../data/upgrades.js';
 
 export class HubScene extends ArenaScene {
@@ -29,7 +31,7 @@ export class HubScene extends ArenaScene {
   }
 
   enter() {
-    const charId = this.game.selectedChar || 'yuji';
+    const charId = this.game.save.data.custom?.created ? 'custom' : (this.game.selectedChar || 'yuji');
     this.createWorld({
       arena: HUB_ARENA,
       theme: 'hub',
@@ -52,10 +54,7 @@ export class HubScene extends ArenaScene {
       vx: 0,
       vy: 0,
       facingX: n.facingX || 1,
-    })).filter((n) => {
-      if (n.id === 'nobara') return this.game.save.hasCharacter('nobara');
-      return true;
-    });
+    })); // NPCs/trainers are always present at the school; they are not playable.
     this.world.camera.x = 480 - 320;
     this.world.camera.y = 280 - 180;
     this.roomLabel = '';
@@ -90,7 +89,10 @@ export class HubScene extends ArenaScene {
     }
     for (const n of this.npcs) {
       let label = `Talk to ${n.name.split(' ')[0]}`;
-      if (n.id === 'megumi') label = 'Megumi — Ten Shadows';
+      if (n.id === 'megumi') label = 'Megumi — Ten Shadows · train · spar';
+      if (n.id === 'yuji') label = 'Yuji — train · spar';
+      if (n.id === 'sukuna') label = 'Sukuna — train · spar';
+      if (n.id === 'gojo') label = 'Gojo — train · spar';
       if (n.id === 'instructor') label = 'Spar with Kusakabe';
       if (n.id === 'researcher') label = 'Technique research';
       if (n.id === 'progression') label = 'Progression';
@@ -173,6 +175,8 @@ export class HubScene extends ArenaScene {
   interactNpc(npc) {
     const save = this.game.save;
     if (npc.id === 'megumi') return this.openMegumi();
+    if (TRAINERS[npc.id]) return this.openTrainer(npc.id);
+    if (npc.charId && TRAINERS[npc.charId]) return this.openTrainer(npc.charId);
     if (npc.id === 'instructor') return this.openSpar();
     if (npc.id === 'researcher') return this.openResearch();
     if (npc.id === 'progression') return this.openShrine();
@@ -184,8 +188,6 @@ export class HubScene extends ArenaScene {
     } else if (npc.charId === 'nobara') {
       lines.push(['Nobara', 'I am not here to support anyone. My technique is the best one here.']);
       lines.push(['Nobara', 'Nails first, questions later. Mark them, then pull the hairpin.']);
-    } else if (npc.charId === 'sukuna') {
-      lines.push(['Sukuna', 'Show me what your technique can do. Find me in the training hall if you dare.']);
     } else if (npc.charId === 'gojo') {
       lines.push(['Gojo', 'You are doing fine. Which is exactly what I would say if you were not.']);
       lines.push(['Gojo', 'Blue pulls. Red pushes. Put them together and the world politely steps aside.']);
@@ -449,6 +451,157 @@ export class HubScene extends ArenaScene {
     p.ce = Math.min(p.ce, p.maxCe);
   }
 
+
+  // -------------------------------------------------------------------------
+  // NPC trainers: dialogue, technique-path lessons and sparring. Winning a
+  // lesson/spar earns a training credit that unlocks the NEXT ability of the
+  // player's own innate technique (never another character's technique).
+  // -------------------------------------------------------------------------
+  openTrainer(trainerId) {
+    const save = this.game.save;
+    const self = this;
+    const tr = TRAINERS[trainerId];
+    if (!tr) return;
+    const c = save.data.custom;
+    const prog = c.techniqueId ? progressionFor(c.techniqueId) : [];
+    const next = prog.find((step) =>
+      step.kind === 'ability' ? !c.unlockedAbilities.includes(step.id) : step.kind === 'ultimate' ? !c.ultimateUnlocked : !c.domainUnlocked);
+    const lessonIdx = Math.min((c.training[trainerId]?.lessons || 0), tr.lessons.length - 1);
+    const items = [
+      { label: 'Talk', sub: tr.lines[0][1].slice(0, 44) + '…', color: '#9fc0ff', onClick: () => self.openDialogue(tr.lines) },
+      {
+        label: `Lesson: ${tr.lessonName} ${lessonIdx + 1}`, sub: tr.lessons[lessonIdx], color: tr.color,
+        onClick: () => {
+          self.closeOverlay();
+          self.game.engine.go('spar', { opponent: tr.charId, charId: self.player.charId, skill: 0.45 + lessonIdx * 0.15, trainer: trainerId, lesson: true }, 0.35);
+        },
+      },
+      {
+        label: `Spar with ${tr.name.split(' ').pop()}`, sub: 'Real kit, real techniques. Win to earn a training credit.', color: '#7cf0a0',
+        onClick: () => {
+          self.closeOverlay();
+          self.game.engine.go('spar', { opponent: tr.charId, charId: self.player.charId, skill: 0.6, trainer: trainerId }, 0.35);
+        },
+      },
+      { label: 'Technique path', sub: next ? `Next unlock: ${next.name}` : 'Technique complete', color: '#ffd166', onClick: () => self.openTechniquePath(trainerId) },
+      { label: 'Leave', color: '#9aa3b2', onClick: () => self.closeOverlay() },
+    ];
+    const menu = new ScrollableMenu(items, { rowH: 30, gap: 4, viewportH: 168 });
+    this.overlay = {
+      update(dt) {
+        if (input.wasPressed('pause')) return self.closeOverlay();
+        const it = menu.update(dt) || menu.handleTap(70, 104, 320);
+        if (it) it.onClick?.();
+      },
+      draw(ctx) {
+        screenShade(ctx, 0.78);
+        panel(ctx, 46, 24, 548, 300, { fill: 'rgba(8,10,18,0.99)', border: tr.color, title: `${tr.name.toUpperCase()} — TRAINER` });
+        menu.draw(ctx, 70, 104, 320);
+        panel(ctx, 408, 104, 168, 176, { fill: 'rgba(14,16,26,0.96)', border: '#3a3f52', inner: false });
+        text(ctx, 'TRAINING', 420, 120, { size: 7, color: tr.color });
+        const t = c.training[trainerId] || { lessons: 0, sparWins: 0 };
+        text(ctx, `Lessons done: ${t.lessons}`, 420, 138, { size: 6, color: '#dfe6f2' });
+        text(ctx, `Spar wins: ${t.sparWins}`, 420, 150, { size: 6, color: '#dfe6f2' });
+        text(ctx, `Mastery: ${c.mastery}`, 420, 162, { size: 6, color: '#ffd166' });
+        wrapText(ctx, next ? `Win a lesson or spar to unlock: ${next.name} (${TECHNIQUES[c.techniqueId]?.name || ''}). Only your own technique grows.` : 'Your technique is complete. Wins now raise mastery.', 420, 180, 144, 9, { size: 6, color: '#b9c4d8', bold: false });
+        text(ctx, 'ESC to leave · scroll for all options', 320, 316, { size: 6, align: 'center', color: '#93a0b8' });
+      },
+    };
+    this.player.controlEnabled = false;
+    this.uiOverlay = this.overlay;
+  }
+
+  openTechniquePath(trainerId) {
+    const save = this.game.save;
+    const self = this;
+    const c = save.data.custom;
+    const t = TECHNIQUES[c.techniqueId];
+    this.overlay = {
+      update(dt) {
+        if (input.wasPressed('pause') || input.wasPressed('confirm') || input.pointer.pressed) self.openTrainer(trainerId);
+      },
+      draw(ctx) {
+        screenShade(ctx, 0.82);
+        panel(ctx, 70, 36, 500, 280, { fill: 'rgba(8,10,18,0.99)', border: '#ffd166', title: `TECHNIQUE PATH — ${(t?.name || '').toUpperCase()}` });
+        let y = 66;
+        if (t) {
+          t.abilities.forEach((a, i) => {
+            const un = c.unlockedAbilities.includes(a.id);
+            text(ctx, `${un ? '✔' : '—'} [${i + 1}] ${a.name}`, 88, y, { size: 7, color: un ? '#7cf0a0' : '#5b6478' });
+            y += 12;
+          });
+          text(ctx, `${c.ultimateUnlocked ? '✔' : '—'} [R] ${t.ultimate?.name || '—'}`, 88, y, { size: 7, color: c.ultimateUnlocked ? '#ffb03a' : '#5b6478' });
+          y += 12;
+          if (t.domain) {
+            text(ctx, `${c.domainUnlocked ? '✔' : '—'} [F] ${t.domain.name}`, 88, y, { size: 7, color: c.domainUnlocked ? '#c9a2ff' : '#5b6478' });
+            y += 12;
+          }
+        }
+        wrapText(ctx, 'Unlock order is fixed: abilities first, then your ultimate, then your domain. Each trainer win or completed lesson unlocks exactly the next step of YOUR technique.', 88, y + 10, 460, 9, { size: 6, color: '#b9c4d8', bold: false });
+        text(ctx, 'Enter to return', 320, 304, { size: 6, align: 'center', color: '#93a0b8' });
+      },
+    };
+    this.uiOverlay = this.overlay;
+  }
+
+  openFusionLab() {
+    const save = this.game.save;
+    const self = this;
+    const canUse = this.player.canTenShadows;
+    const owned = SHIKIGAMI_ORDER.filter((id) => save.hasShikigami(id) && id !== 'mahoraga');
+    let stage = 'a';
+    let first = save.data.custom.fusionPair?.[0] || 'toad';
+    const buildItems = () => {
+      if (!canUse) {
+        return Object.keys(FUSIONS).map((k) => {
+          const d = getFusionDef(...k.split('+'));
+          return { label: d ? d.name : k, sub: d?.desc || '', color: '#5b6478', disabled: true };
+        }).concat([{ label: 'Leave', color: '#9aa3b2', onClick: () => self.openMegumi() }]);
+      }
+      const list = stage === 'a' ? owned : owned.filter((id) => id !== first);
+      return list.map((id) => ({
+        label: `${stage === 'a' ? 'First' : 'Second'}: ${SHIKIGAMI[id].name}`,
+        sub: SHIKIGAMI[id].desc, color: '#c9a2ff',
+        onClick: () => {
+          if (stage === 'a') { first = id; stage = 'b'; rebuild(); }
+          else {
+            save.data.custom.fusionPair = [first, id];
+            self.player.fusionPair = [first, id];
+            save.save();
+            const d = getFusionDef(first, id);
+            self.game.toast(`Fusion set: ${d?.name || 'Chimera'}`, { color: '#c9a2ff' });
+            self.openMegumi();
+          }
+        },
+      })).concat([{ label: 'Back', color: '#9aa3b2', onClick: () => self.openMegumi() }]);
+    };
+    let menu;
+    const rebuild = () => { menu = new ScrollableMenu(buildItems(), { rowH: 28, gap: 3, viewportH: 168 }); };
+    rebuild();
+    this.overlay = {
+      update(dt) {
+        if (input.wasPressed('pause')) return self.openMegumi();
+        const it = menu.update(dt) || menu.handleTap(70, 104, 330);
+        if (it) it.onClick?.();
+      },
+      draw(ctx) {
+        screenShade(ctx, 0.8);
+        panel(ctx, 46, 24, 548, 300, { fill: 'rgba(8,10,18,0.99)', border: '#c9a2ff', title: 'SHIKIGAMI FUSION LAB' });
+        text(ctx, canUse ? `Choose ${stage === 'a' ? 'the first' : 'the second'} shadow. Current pair: ${(save.data.custom.fusionPair || []).join(' + ')}` : 'Your technique is not Ten Shadows — Megumi demonstrates the pairs below.', 70, 88, { size: 6, color: '#93a0b8' });
+        menu.draw(ctx, 70, 104, 330);
+        const cur = getFusionDef(...(save.data.custom.fusionPair || ['toad', 'rabbitEscape']));
+        panel(ctx, 416, 104, 160, 168, { fill: 'rgba(14,16,26,0.96)', border: '#3a3f52', inner: false });
+        text(ctx, 'RESULT', 428, 120, { size: 7, color: '#c9a2ff' });
+        if (cur) {
+          text(ctx, cur.name, 428, 138, { size: 7, color: '#ffffff' });
+          wrapText(ctx, cur.desc, 428, 152, 136, 8, { size: 6, color: '#b9c4d8', bold: false });
+        }
+        text(ctx, 'ESC to return', 320, 316, { size: 6, align: 'center', color: '#93a0b8' });
+      },
+    };
+    this.uiOverlay = this.overlay;
+  }
+
   // -------------------------------------------------------------------------
   // Megumi — Ten Shadows taming
   // -------------------------------------------------------------------------
@@ -471,8 +624,11 @@ export class HubScene extends ArenaScene {
       };
     });
     items.push({ label: 'Totality status', sub: 'Combination paths', color: '#ffd166', onClick: () => self.openTotality() });
+    items.push({ label: 'Spar with Megumi', sub: 'Megumi fights with his real Ten Shadows kit. Win for a training credit.', color: '#7cf0a0', onClick: () => { self.closeOverlay(); self.game.engine.go('spar', { opponent: 'megumi', charId: self.player.charId, skill: 0.6, trainer: 'megumi' }, 0.35); } });
+    items.push({ label: 'Lesson: Shadow Tactics', sub: TRAINERS.megumi.lessons[0], color: '#8f7bff', onClick: () => { self.closeOverlay(); self.game.engine.go('spar', { opponent: 'megumi', charId: self.player.charId, skill: 0.5, trainer: 'megumi', lesson: true }, 0.35); } });
+    items.push({ label: 'Fusion lab', sub: 'Choose two shikigami to fuse (e.g. Toad + Rabbit Escape)', color: '#c9a2ff', onClick: () => self.openFusionLab() });
     items.push({ label: 'Leave', color: '#9aa3b2', onClick: () => self.closeOverlay() });
-    const menu = new VerticalMenu(items);
+    const menu = new ScrollableMenu(items, { rowH: 24, gap: 3, viewportH: 190 });
     this.overlay = {
       update(dt) {
         if (input.wasPressed('pause')) return self.closeOverlay();
@@ -481,8 +637,8 @@ export class HubScene extends ArenaScene {
       },
       draw(ctx) {
         screenShade(ctx, 0.75);
-        panel(ctx, 46, 18, 548, 324, { fill: 'rgba(8,10,18,0.99)', border: '#a79bff', title: 'MEGUMI FUSHIGURO — TEN SHADOWS' });
-        menu.draw(ctx, 70, 98, 320, { rowH: 24 });
+        panel(ctx, 46, 18, 548, 324, { fill: 'rgba(8,10,18,0.99)', border: '#a79bff', title: 'MEGUMI FUSHIGURO — TEN SHADOWS (scroll)' });
+        menu.draw(ctx, 70, 98, 320);
         panel(ctx, 408, 96, 168, 210, { fill: 'rgba(14,16,26,0.96)', border: '#3a3f52', inner: false });
         const hovered = menu.items[menu.index];
         text(ctx, 'RITUAL', 420, 112, { size: 7, color: '#a79bff' });
@@ -491,7 +647,7 @@ export class HubScene extends ArenaScene {
         text(ctx, 'permanent. You must', 420, 210, { size: 6, color: '#93a0b8' });
         text(ctx, 'defeat them in a real', 420, 220, { size: 6, color: '#93a0b8' });
         text(ctx, 'fight to bind them.', 420, 230, { size: 6, color: '#93a0b8' });
-        text(ctx, `Agito: ${save.hasShikigami('divineDogs') && save.hasShikigami('nue') && save.hasShikigami('greatSerpent') ? 'available at 50% meter' : 'tame dogs + nue + serpent'}`, 420, 256, { size: 6, color: '#8fd7ff' });
+        text(ctx, `Agito: ${save.hasShikigami('roundDeer') && save.hasShikigami('nue') && save.hasShikigami('mourningTiger') && save.hasShikigami('greatSerpent') ? 'available at 50% meter' : 'tame deer + nue + tiger + serpent'}`, 420, 256, { size: 6, color: '#8fd7ff' });
         text(ctx, `Mahoraga: ${save.hasShikigami('mahoraga') ? 'summonable at 100%' : 'untamed'}`, 420, 268, { size: 6, color: '#ff8a8a' });
         text(ctx, 'ESC to leave', 320, 334, { size: 6, align: 'center', color: '#93a0b8' });
       },
@@ -569,10 +725,10 @@ export class HubScene extends ArenaScene {
     const self = this;
     const opponents = [
       { id: 'kusakabe', name: 'Kusakabe (instructor)', locked: false, desc: 'A measured swordsman. Punishes greedy attacks.' },
-      ...PLAYABLE_ORDER.map((id) => ({
+      ...PLAYABLE_ORDER.filter((id) => id !== this.player.charId).map((id) => ({
         id,
         name: CHARACTERS[id].name,
-        locked: false,
+        locked: false, // NPC trainers/opponents are never locked behind playable unlocks
         desc: CHARACTERS[id].blurb,
       })),
     ];
@@ -586,7 +742,7 @@ export class HubScene extends ArenaScene {
         disabled: o.locked,
         onClick: () => {
           self.closeOverlay();
-          self.game.engine.go('spar', { opponent: o.id, charId: self.player.charId, skill }, 0.35);
+          self.game.engine.go('spar', { opponent: o.id, charId: self.player.charId, skill, trainer: TRAINERS[o.id] ? o.id : null }, 0.35);
         },
       })).concat([{ label: 'Leave', color: '#9aa3b2', onClick: () => self.closeOverlay() }])
     );
@@ -607,7 +763,7 @@ export class HubScene extends ArenaScene {
         menu.draw(ctx, 70, 96, 300, { rowH: 22, gap: 3 });
         panel(ctx, 392, 96, 184, 170, { fill: 'rgba(14,16,26,0.96)', border: '#3a3f52', inner: false });
         text(ctx, 'RULES', 404, 112, { size: 7, color: '#ffd166' });
-        wrapText(ctx, 'Win against your own technique trainer to unlock skills, ultimate and domain. Other opponents grant tribute only.', 404, 128, 160, 9, { size: 6, color: '#b9c4d8', bold: false });
+        wrapText(ctx, 'Real combat. First to zero HP loses. Your opponent uses their actual techniques, dodges, and attempts Black Flash.', 404, 128, 160, 9, { size: 6, color: '#b9c4d8', bold: false });
         text(ctx, `DIFFICULTY: ${['Friendly', 'Serious', 'Lethal'][skill <= 0.4 ? 0 : skill <= 0.65 ? 1 : 2]}`, 404, 200, { size: 7, color: '#8fd7ff' });
         text(ctx, '← → to change', 404, 212, { size: 6, color: '#93a0b8' });
         text(ctx, 'ESC to leave', 320, 334, { size: 6, align: 'center', color: '#93a0b8' });

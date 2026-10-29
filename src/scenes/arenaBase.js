@@ -9,6 +9,7 @@ import { Hud } from '../ui/hud.js';
 import { input } from '../core/input.js';
 import { clamp } from '../core/util.js';
 import { text, panel } from '../ui/ui.js';
+import { buildCustomDef, ensureTechnique } from '../data/techniques.js';
 
 export class ArenaScene {
   constructor(game, params = {}, opts = {}) {
@@ -116,6 +117,24 @@ export class ArenaScene {
   }
 
   createPlayer({ charId, x, y, mods, run, extraAbilities, availableSummons }) {
+    let charDef = null;
+    let customOpts = {};
+    if (charId === 'custom') {
+      const save = this.game.save;
+      if (!save.data.custom.techniqueId) ensureTechnique(save);
+      if (!save.data.custom.unlockedAbilities.length) {
+        save.data.custom.unlockedAbilities = (buildCustomDef(save).abilities || []).slice(0, 2).map((a) => a.id);
+        save.save();
+      }
+      charDef = buildCustomDef(save);
+      customOpts = {
+        charDef,
+        unlockedIds: save.data.custom.unlockedAbilities,
+        ultimateLocked: !save.data.custom.ultimateUnlocked,
+        domainLocked: !save.data.custom.domainUnlocked,
+        fusionPair: save.data.custom.fusionPair,
+      };
+    }
     const p = new Player(this.world, {
       charId,
       save: this.game.save,
@@ -125,6 +144,7 @@ export class ArenaScene {
       y,
       extraAbilities,
       availableSummons,
+      ...customOpts,
     });
     p.controller = p;
     this.world.player = p;

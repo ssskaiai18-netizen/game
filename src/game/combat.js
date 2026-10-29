@@ -250,9 +250,150 @@ export function executeAbility(world, actor, ab, opts = {}) {
     case 'summonAdds':
       world.onSummonAdds?.(actor, ab);
       break;
+    case 'divergent':
+      executeDivergent(world, actor, ab, opts);
+      break;
+    case 'transform':
+      activateTransform(world, actor, ab);
+      break;
+    case 'fusion':
+      world.onFusion?.(actor, ab);
+      break;
     default:
       spawnMelee(world, actor, ab, opts);
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// Divergent Fist — initial punch, delayed impact, timed Black Flash re-press.
+// The second press only works inside [windowStart, windowEnd]. Pressing early
+// fails the attempt (anti-mash); missing the window gives the normal impact.
+// ---------------------------------------------------------------------------
+export function executeDivergent(world, actor, ab, opts = {}) {
+  spawnMelee(world, actor, ab, { ...opts, hitIndex: 0 });
+  const d = ab.divergent || {};
+  actor.divergentState = {
+    ab,
+    angle: actor.abilityAngle,
+    t: 0,
+    windowStart: d.windowStart ?? 0.14,
+    windowEnd: d.windowEnd ?? 0.55,
+    resolveAt: Math.max(d.delay ?? 0.34, d.windowEnd ?? 0.55),
+    delayedDmg: d.delayedDmg ?? (ab.dmg || 10),
+    bfDmg: d.bfDmg ?? (ab.dmg || 10) * 2.4,
+    empowered: !!d.empowered,
+    resolved: false,
+    failed: false,
+    hitIds: new Set(),
+  };
+  world.fx.burst(actor.x + Math.cos(actor.abilityAngle) * 14, actor.y - 10, 6, { color: ab.color || '#ff8a5c', speed: 80, dir: actor.abilityAngle, spread: 1.1, life: 0.22 });
+}
+
+/** Attempt the Black Flash re-press. Returns 'bf' | 'early' | null. */
+export function triggerDivergent(world, actor) {
+  const st = actor.divergentState;
+  if (!st || st.resolved) return null;
+  if (st.t < st.windowStart) {
+    st.failed = true;
+    world.fx.text(actor.x, actor.y - 36, 'TOO EARLY', { color: '#777f8f', scale: 0.75, life: 0.5 });
+    return 'early';
+  }
+  if (st.t > st.windowEnd) return null;
+  st.resolved = true;
+  actor.divergentState = null;
+  const ab = st.ab;
+  const hb = {
+    owner: actor, team: actor.team, ability: ab,
+    x: actor.x, y: actor.y, follow: true, angle: st.angle,
+    range: (ab.range || 30) + 8, arc: (ab.arc || 1.7) + 0.3,
+    dmg: Math.max(1, Math.round(st.bfDmg / 2.6)),
+    category: ab.category || 'physical', knockback: 150, hitstop: 0.12,
+    color: '#ff1e3c', life: 0.12, hits: new Set(), pierce: 99,
+    forceBlackFlash: true, basic: false, isUlt: !!st.empowered,
+  };
+  world.addHitbox(hb);
+  world.fx.flash('#2a0008', 0.16);
+  world.fx.stop(st.empowered ? 0.12 : 0.09);
+  world.fx.shake(st.empowered ? 7 : 5, 0.28);
+  world.fx.slash(actor.x, actor.y - 12, st.angle, 2.6, '#ff1e3c', 1, 0.28, 5);
+  world.fx.burst(actor.x + Math.cos(st.angle) * 18, actor.y - 12, 24, { color: '#ff1e3c', color2: '#1a0010', speed: 190, life: 0.5, glow: true });
+  world.fx.text(actor.x, actor.y - 44, st.empowered ? 'DIVERGENT BLACK FLASH!' : 'BLACK FLASH!', { color: '#ff1e3c', scale: 1.4, life: 0.95, crit: true });
+  world.audio?.play('blackflash');
+  if (world.stats) world.stats.bfSuccess++;
+  actor.bfEmpowered = 3;
+  return 'bf';
+}
+
+export function updateDivergent(world, actor, dt) {
+  const st = actor.divergentState;
+  if (!st) return;
+  st.t += dt;
+  if (st.resolved) { actor.divergentState = null; return; }
+  if (st.t >= st.resolveAt) {
+    st.resolved = true;
+    actor.divergentState = null;
+    const ab = st.ab;
+    // delayed cursed-energy impact: hits whatever the punch touched (or the space in front)
+    const targets = world.actors.filter((t) => t && !t.dead && t.team !== actor.team && (st.hitIds.has(t.id) || Math.hypot(t.x - actor.x, t.y - actor.y) < (ab.range || 30) + 20));
+    world.fx.ring(actor.x + Math.cos(st.angle) * 16, actor.y - 10, 22, '#ff5a3a', 0.3, 3);
+    world.fx.burst(actor.x + Math.cos(st.angle) * 16, actor.y - 10, 12, { color: '#ff8a5c', color2: '#5a1408', speed: 130, life: 0.4, glow: true });
+    world.fx.stop(0.045);
+    world.audio?.play('heavy');
+    for (const t of targets) {
+      world.damage(t, st.delayedDmg * (actor.dmgMult || 1), {
+        source: actor, category: 'technique', knockback: 90, dir: st.angle, hitstop: 0.05, ability: ab,
+      });
+      t.applyStatus('stun', 0, 0.18);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Transformations (King of Curses / Heian Form / Limitless Ascendant).
+// One entity, swapped kit + optional look override, restored on expiry.
+// ---------------------------------------------------------------------------
+export function activateTransform(world, actor, ab) {
+  if (!actor || actor.transformT > 0) return false;
+  actor._preTransform = {
+    slots: actor.isPlayer ? (actor.slots || []).slice() : null,
+    abilities: actor.transformSlots ? actor.transformSlots.slice() : null,
+    look: actor.look ? { ...actor.look } : null,
+    scale: actor.scale,
+  };
+  actor.transformT = ab.dur || 12;
+  actor.transformDur = ab.dur || 12;
+  actor.transformName = ab.formName || ab.name;
+  actor.transformAbility = ab;
+  if (actor.isPlayer && ab.slots) actor.slots = ab.slots.slice();
+  else if (ab.slots) actor.transformSlots = ab.slots.slice();
+  if (ab.look && actor.look) actor.look = { ...actor.look, ...ab.look };
+  if (ab.id === 'sukuna_ult') actor.scale = (actor._preTransform.scale || actor.scale) * 1.12;
+  actor.invulnT = Math.max(actor.invulnT, 0.5);
+  world.fx.flash(ab.color || '#ffffff', 0.3);
+  world.fx.shake(7, 0.45);
+  world.fx.ring(actor.x, actor.y - 10, 54, ab.color || '#ffffff', 0.8, 3, true);
+  world.fx.burst(actor.x, actor.y - 12, 34, { color: ab.color || '#ffffff', speed: 200, life: 0.7, glow: true });
+  world.fx.text(actor.x, actor.y - 56, (ab.formName || ab.name || 'TRANSFORM').toUpperCase(), { color: ab.color || '#ffffff', scale: 1.3, life: 1.6 });
+  world.audio?.play('ult');
+  world.scene?.showBanner?.(ab.formName || ab.name, actor.name || '', ab.color || '#ffd166', 1.6);
+  return true;
+}
+
+export function endTransform(world, actor) {
+  if (!actor || !actor._preTransform) { if (actor) actor.transformT = 0; return; }
+  const pre = actor._preTransform;
+  if (actor.isPlayer && pre.slots) actor.slots = pre.slots;
+  actor.transformSlots = pre.abilities;
+  if (pre.look) actor.look = pre.look;
+  if (pre.scale) actor.scale = pre.scale;
+  actor._preTransform = null;
+  actor.transformT = 0;
+  actor.transformName = null;
+  actor.transformAbility = null;
+  world.fx.ring(actor.x, actor.y - 10, 34, '#8b98b0', 0.4, 2);
+  world.fx.text(actor.x, actor.y - 44, 'FORM ENDS', { color: '#8b98b0', scale: 0.85, life: 0.9 });
+  world.audio?.play('domainend');
 }
 
 function startDashMove(world, actor, ab, angle) {
@@ -374,8 +515,16 @@ export function spawnMelee(world, actor, ab, opts = {}) {
     isDomain: !!ab.isDomain,
     execute: ab.execute,
     onHit: ab.onHit,
+    finisher: ab.finisher || null,
+    launch: ab.launch || null,
     tickIndex: opts.hitIndex || 0,
   };
+  if (ab.finisherHit && ab.hits && (opts.hitIndex || 0) >= ab.hits) {
+    hb.dmg = Math.round(hb.dmg * 1.8);
+    hb.knockback = (hb.knockback || 60) * 1.6;
+    hb.hitstop = Math.max(hb.hitstop || 0.03, 0.08);
+    hb.isFinisher = true;
+  }
   world.addHitbox(hb);
   return hb;
 }
@@ -484,8 +633,23 @@ export function spawnZone(world, actor, ab, aimPoint, isMark = false) {
     isDomain: false,
     shake: z.shake || 0,
     multHits: (z.ticks || 1) > 1,
+    scissor: !!ab.scissor,
     hasHitOnce: new Set(),
   });
+  if (ab.spiderweb) {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + (actor.abilityAngle || 0);
+      world.fx.slash(x + Math.cos(a) * 26, y - 4 + Math.sin(a) * 18, a, 2.2, ab.color || '#ff4040', i % 2 ? 1 : -1, 0.4, 2);
+    }
+    world.fx.ring(x, y - 4, z.radius || 60, ab.color || '#ff4040', 0.45, 2);
+    world.fx.text(actor.x, actor.y - 42, 'SPIDERWEB', { color: ab.color || '#ff4040', scale: 0.9, life: 0.8 });
+  }
+  if (ab.scissor) {
+    world.fx.ring(x, y, 26, '#ff3355', 0.5, 2);
+    world.fx.text(x, y - 30, '✂ MARKED', { color: '#ff3355', scale: 0.9, life: 0.7 });
+    world.fx.slash(x, y - 8, 0.7, 2.4, '#ff3355', 1, 0.45, 3);
+    world.fx.slash(x, y - 8, -0.7, 2.4, '#ff3355', -1, 0.45, 3);
+  }
   if (isMark) world.audio?.play('mark');
   else world.audio?.play(ab.sfx || 'technique');
 }
@@ -573,8 +737,15 @@ export function updateHitboxes(world, dt) {
 
 function applyHit(world, hb, target) {
   const dir = hb.angle;
-  const bf = hb.owner && hb.owner.consumeBlackFlash ? hb.owner.consumeBlackFlash(hb.ability) : false;
+  if (hb.owner?.divergentState && hb.ability?.type === 'divergent') hb.owner.divergentState.hitIds.add(target.id);
+  const bf = hb.forceBlackFlash || (hb.owner && hb.owner.consumeBlackFlash ? hb.owner.consumeBlackFlash(hb.ability) : false);
   let dmg = hb.dmg;
+  if (hb.finisher && target.maxHp && target.hp / target.maxHp <= (hb.finisher.hpFrac ?? 0.3)) {
+    dmg = Math.round(dmg * (hb.finisher.mult || 1.7));
+    world.fx.text(target.x, target.y - 40, 'FINISHER!', { color: '#ffd166', scale: 1.1, life: 0.9, crit: true });
+    world.fx.stop(0.08);
+    world.fx.shake(5, 0.25);
+  }
   world.damage(target, dmg, {
     blackFlash: bf,
     source: hb.owner,
@@ -589,6 +760,12 @@ function applyHit(world, hb, target) {
     status: hb.status,
     execute: hb.execute,
   });
+  if (hb.launch) {
+    target.applyStatus('stun', 0, hb.launch.stun || 0.6);
+    target.knockback(Math.cos(dir), Math.sin(dir) - 0.6, hb.launch.knock || 160);
+    world.fx.text(target.x, target.y - 42, 'LAUNCHED!', { color: '#ffd166', scale: 0.95, life: 0.8 });
+    world.fx.ring(target.x, target.y - 6, 20, '#ffd166', 0.3, 2);
+  }
   if (hb.pull) {
     const p = hb.owner;
     if (p) {
@@ -804,6 +981,12 @@ export function updateZones(world, dt) {
             z.owner.bleedT = 0;
             z.owner.burnT = 0;
             z.owner.stunT = 0;
+          }
+          if (z.scissor) {
+            world.fx.slash(z.x, z.y - 8, 0.7, 3, '#ff3355', 1, 0.3, 4);
+            world.fx.slash(z.x, z.y - 8, -0.7, 3, '#ffffff', -1, 0.3, 4);
+            world.fx.shake(4, 0.2);
+            world.fx.stop(0.05);
           }
           if (z.explosion) {
             world.fx.ring(z.x, z.y, z.radius, z.color, 0.35, 3, true);

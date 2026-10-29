@@ -23,8 +23,8 @@ export function startDomain(world, actor, ab) {
   }
   const dur = Math.round(((ab.dur || 10) * (actor.mods?.domainDurMult || 1)) * 10) / 10;
   world.domain = {
-    id: ab.id,
-    name: ab.name || 'Domain',
+    id: ab.domainId || ab.id,
+    name: ab.domainName || ab.name || 'Domain',
     owner: actor,
     actor,
     color: ab.color || '#a79bff',
@@ -113,7 +113,8 @@ function resolveClash(world, challenger, defender) {
   world.fx.text(320 + world.camera.x, 150 + world.camera.y, 'DOMAIN CLASH', { color: '#ffd166', scale: 1.8, life: 2 });
   if (playerWins) {
     const old = world.domain;
-    if (old) endDomain(world);
+    world.domain = null;
+    if (old) old.owner.inDomain = false;
     if (bossActor) {
       bossActor.applyStatus('stun', 0, 1.6);
       bossActor.domainUsed = true;
@@ -129,7 +130,8 @@ function resolveClash(world, challenger, defender) {
     }
   } else {
     const old = world.domain;
-    if (old) endDomain(world);
+    world.domain = null;
+    if (old) old.owner.inDomain = false;
     if (playerActor) {
       playerActor.applyStatus('stun', 0, 1.2);
       playerActor.ce = Math.max(0, playerActor.ce - 25);
@@ -144,7 +146,8 @@ function setTimeoutSafe(fn) {
 }
 
 function domainEnemies(world, actor) {
-  return world.actors.filter((e) => !e.dead && e !== actor && e.team !== actor.team);
+  // Hostile actors to the domain's owner (works for player, NPC and boss domains).
+  return world.actors.filter((e) => e && !e.dead && e !== actor && e.team !== actor.team && !e.isDummy);
 }
 
 function inside(world, x, y) {
@@ -189,13 +192,11 @@ export function updateDomain(world, dt) {
         endDomain(world);
         return;
       }
-      for (const e of domainEnemies(world, actor)) {
-        if (inside(world, e.x, e.y) && e.invulnT <= 0) e.applyStatus('stun', 0, 0.1);
-      }
       if (d.tick >= 0.7) {
         d.tick = 0;
         for (const e of domainEnemies(world, actor)) {
           if (!inside(world, e.x, e.y)) continue;
+          e.applyStatus('stun', 0, 0.75);
           world.damage(e, 9 * (actor.mods?.domainDmgMult || 1), {
             source: actor,
             category: 'domain',
@@ -220,16 +221,39 @@ export function updateDomain(world, dt) {
       }
       break;
     }
+    case 'incomplete_shrine': {
+      // Yuji's shrine: slower slashes than Malevolent Shrine, each briefly
+      // incapacitates — but a per-target stun clock prevents stun-locking.
+      if (d.tick >= 0.85) {
+        d.tick = 0;
+        for (const e of domainEnemies(world, actor)) {
+          if (!inside(world, e.x, e.y)) continue;
+          const ang = Math.random() * TAU;
+          world.fx.slash(e.x + Math.cos(ang) * 10, e.y - 8 + Math.sin(ang) * 10, ang, 2.4, '#ff5a6a', Math.random() < 0.5 ? 1 : -1, 0.3, 3);
+          world.damage(e, 6 * (actor.mods?.domainDmgMult || 1), {
+            source: actor, category: 'cut', hitstop: 0.01, isDomain: true, dot: true,
+          });
+          if ((e.domainStunCd || 0) <= 0) {
+            e.applyStatus('stun', 0, 0.35);
+            e.domainStunCd = 1.5;
+          }
+        }
+      }
+      if (Math.random() < dt * 8) {
+        world.fx.addParticle({ x: actor.x + (Math.random() - 0.5) * 320, y: actor.y + (Math.random() - 0.5) * 200, vx: 0, vy: -8, life: 0.7, color: '#c0273a', size: 2, glow: true });
+      }
+      break;
+    }
     case 'malevolent_shrine':
     case 'malevolentShrine': {
-      if (d.tick >= 0.5) {
+      if (d.tick >= 0.32) {
         d.tick = 0;
         const targets = domainEnemies(world, actor).filter((e) => inside(world, e.x, e.y));
         for (const e of targets) {
           if (Math.random() < 0.85) {
             const ang = Math.random() * TAU;
             world.fx.slash(e.x + Math.cos(ang) * 10, e.y - 8 + Math.sin(ang) * 10, ang, 2.4, '#ff2a3a', Math.random() < 0.5 ? 1 : -1, 0.3, 3);
-            world.damage(e, 8 * (actor.mods?.domainDmgMult || 1), {
+            world.damage(e, 5 * (actor.mods?.domainDmgMult || 1), {
               source: actor,
               category: 'cut',
               hitstop: 0.01,
@@ -248,8 +272,11 @@ export function updateDomain(world, dt) {
       }
       break;
     }
-    case 'chimera_garden':
     case 'chimera_shadow_garden': {
+      // Inside the Garden: normal summon cooldown restrictions are removed.
+      for (const k of Object.keys(actor.cdMap || {})) {
+        if (k.includes('summon') || k.includes('fusion') || k === 'megumi_summon' || k === 'cs_summon' || k === 'cs_fusion') actor.cdMap[k] = 0;
+      }
       // summons frenzy, enemies dragged & slowed
       for (const s of world.summons) {
         if (s.dead) continue;
@@ -402,10 +429,13 @@ export function endDomain(world) {
   }
   for (const s of world.summons) {
     if (s.dead) continue;
-    if (s.shadowCopy && s.owner === d.actor) { world.dismissSummon(s, false); continue; }
     s.cdMult = 1;
     if (s.summonBaseDmg) s.dmgMult = s.summonBaseDmg;
     s.speed = s.baseSpeed || s.speed;
+  }
+  // Centralised cleanup: temporary shadow copies never outlive the Garden.
+  for (const s of world.summons.slice()) {
+    if (s.isShadowCopy && !s.dead) world.dismissSummon(s, false);
   }
   const p = world.player;
   if (p) p.speed = p.speedBase || p.speed;

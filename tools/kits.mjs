@@ -17,7 +17,7 @@ function makeWorld(charId) {
   save.data.unlocks.characters = Object.keys(CHARACTERS);
   save.data.unlocks.domains = Object.keys(CHARACTERS);
   save.data.unlocks.shikigami = Object.fromEntries(
-    Object.keys(save.data.unlocks.shikigami).map((k) => [k, true])
+    ['divineDogs','nue','greatSerpent','toad','maxElephant','rabbitEscape','roundDeer','piercingOx','mourningTiger','mahoraga'].map((k) => [k, true])
   );
   const game = { audio: { play() {} }, save, toasts: { push() {} } };
   const world = new World(game, { arena: { x: 0, y: 0, w: 640, h: 360 }, theme: 'shrine', seed: 3 });
