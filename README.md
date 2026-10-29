@@ -23,10 +23,12 @@ Play: open `index.html` through any static web server (or GitHub Pages).
 
 Black Flash: buy the **Black Sparks Scroll** (permanent, in the hub), then reinforce, attack, and press the reinforcement key again while the red timing ring is open. Yuji's window is wider. It is a timing mechanic, not a random crit.
 
+Character data is stored in your browser’s localStorage, not on an account or across devices. Editing your sorcerer does not reroll the technique. Resetting the save erases the character.
+
 ## What is in the game
 
 - **Hub (Jujutsu High)** — walkable campus, idle-animated NPCs (Gojo, Megumi, Nobara, Yaga, Todo, Kogane), three training dummies with a full live training-stats panel, sparring partners that fight with their real kits, Megumi's Ten Shadows taming rituals, a tribute shrine, and the animated cursed gate with a run-prep screen.
-- **Five playable sorcerers** — Yuji, Megumi, Nobara, Gojo, Sukuna. Each has a 3-hit basic chain, four techniques, an ultimate, character-specific timing/costs and a distinct Domain (Gojo, Sukuna, Megumi).
+- **Original sorcerer** — create a name and appearance, then receive one randomly assigned existing technique kit. The assignment persists locally. Start with two techniques; win against the matching character in the instructor’s sparring menu to unlock the remaining two, then the ultimate and (where available) the domain. Yuji, Sukuna, Gojo and Megumi remain sparring opponents. Existing kits are still four-slot kits; the requested five-slot refinements and transformed ultimate movesets are not yet implemented.
 - **Combat** — real hitboxes with startup/active/recovery frames, CE economy, reinforcement, dodge i-frames, perfect dodges, stagger, statuses (bleed/burn/slow/stun/root/mark), readable telegraphs, hitstop, screen shake and particles.
 - **Ten Shadows** — all ten shikigami with their own movesets and AI, taming boss encounters, Divine Dogs Totality, Agito (50% meter, 120 s) and Mahoraga (100% meter, 60 s) with a persistent adaptation wheel (Exposure → Recognition → Partial → Advanced, saved between runs).
 - **Domains** — Unlimited Void (stun + information overload), Malevolent Shrine (cleave field, sure-hit cutting), Chimera Shadow Garden (shadow floor + free summons), boss domains and domain clashes.
@@ -44,4 +46,5 @@ node tools/smoke.mjs                 # boots the real game in jsdom, drives ever
 node tools/systems.mjs               # combat/progression unit tests (500 assertions)
 node tools/kits.mjs                  # every ability of every character must do something
 node tools/balance.mjs [arcIndex]    # scripted bot: DPS / damage taken per character
+node tools/refinement.mjs             # original sorcerer and shadow-domain regressions (requires jsdom)
 ```

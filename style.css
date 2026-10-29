@@ -115,3 +115,20 @@ body {
     display: none !important;
   }
 }
+
+/* Compact form over the existing canvas, scaled for desktop and landscape touch. */
+.sorcerer-form {
+  position: absolute; left: 50%; top: 50%; transform: translate(4%, -45%);
+  width: min(39vw, 330px); color: #c9d3e0; font: bold clamp(10px, 1.5vw, 14px) "Courier New", monospace;
+  display: grid; gap: 10px; z-index: 4; user-select: text; -webkit-user-select: text;
+}
+.sorcerer-form label { display: grid; gap: 3px; }
+.sorcerer-form input, .sorcerer-form select, .sorcerer-form button {
+  font: inherit; color: #e8eef8; background: #10121c; border: 1px solid #4a5570;
+  padding: 5px; width: 100%; touch-action: manipulation;
+}
+.sorcerer-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sorcerer-actions { display: flex; gap: 8px; }
+.sorcerer-actions button { cursor: pointer; border-color: #5b8cff; }
+.sorcerer-actions button:first-child { color: #7cf0a0; }
+@media (max-height: 450px) { .sorcerer-form { gap: 4px; font-size: 10px; } .sorcerer-form input, .sorcerer-form select, .sorcerer-form button { padding: 2px; } }

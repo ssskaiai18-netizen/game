@@ -96,7 +96,7 @@ export class World {
     this.onDomainRequest = (actor, ab) => startDomain(this, actor, ab);
     this.onTenShadowsUlt = (actor, ab) => actor.tryUltimate?.();
     this.spawnUltimateSummon = (owner, id) => spawnUltimateSummon(this, owner, id);
-    this.summonShikigami = (owner, id) => summonShikigami(this, owner, id);
+    this.summonShikigami = (owner, id, opts) => summonShikigami(this, owner, id, opts);
     this.startBossDomain = (actor, def) => startBossDomain(this, actor, def);
     this.detonateEnemy = (a) => detonateEnemy(this, a);
   }
@@ -313,6 +313,8 @@ export class World {
       // movement integration
       this.integrateActor(a, dt);
     }
+    // Removed summons must not accumulate over long sessions.
+    this.summons = this.summons.filter((s) => !s.removed);
     // separation
     for (let i = 0; i < list.length; i++) {
       const a = list[i];
