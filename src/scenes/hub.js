@@ -378,6 +378,28 @@ export class HubScene extends ArenaScene {
           },
         };
       });
+      if (!save.data.unlocks.blackSparks) {
+        const cost = 120;
+        items.push({
+          label: 'Black Sparks Scroll — 120 呪',
+          sub: 'PERMANENT: unlocks the Black Flash timing mechanic for every run',
+          color: '#ff5a7a',
+          disabled: save.data.tributeCurrency < cost,
+          onClick: () => {
+            if (save.data.tributeCurrency < cost) return;
+            save.data.tributeCurrency -= cost;
+            save.data.unlocks.blackSparks = true;
+            save.save();
+            if (self.player) self.player.blackSparks = true;
+            self.game.audio.play('blackflash');
+            self.game.toast('Black Sparks Scroll: reinforce, attack, then tap Shift on impact.', {
+              color: '#ff5a7a',
+              life: 6,
+            });
+            rebuild();
+          },
+        });
+      }
       items.push({ label: 'Close', color: '#9aa3b2', onClick: () => self.closeOverlay() });
       menu = new VerticalMenu(items);
     };
@@ -700,9 +722,18 @@ export class HubScene extends ArenaScene {
         text(ctx, `POINTS: ${save.data.culling.points}`, 480, 48, { size: 10, align: 'right', color: '#ffd166' });
         menu.draw(ctx, 70, 100, 330, { rowH: 24 });
         panel(ctx, 420, 100, 156, 200, { fill: 'rgba(16,16,10,0.96)', border: '#5a5232', inner: false });
-        text(ctx, 'RULES', 432, 116, { size: 7, color: '#ffd166' });
+        text(ctx, 'RULERS', 432, 116, { size: 7, color: '#ffd166' });
+        const names = { higuruma: 'Higuruma', hakari: 'Hakari', kashimo: 'Kashimo', ishigori: 'Ishigori', uro: 'Uro', you: 'YOU' };
+        let py = 130;
+        for (const [id, pts] of Object.entries(save.data.culling.participants || {})) {
+          const label = names[id] || id;
+          text(ctx, label, 432, py, { size: 6, color: id === 'you' ? '#7cf0a0' : '#cfc8a8' });
+          text(ctx, String(pts), 566, py, { size: 6, align: 'right', color: id === 'you' ? '#7cf0a0' : '#ffd166' });
+          py += 10;
+        }
+        text(ctx, 'RULES', 432, py + 8, { size: 7, color: '#ffd166' });
         const rules = ['1. Kill or complete objectives for points.', '2. 100 points lets you add a rule.', '3. Colonies are linked; progress is permanent.'].concat(save.data.culling.rules.map((r, i) => `${i + 4}. ${r}`));
-        let y = 132;
+        let y = py + 22;
         for (const r of rules) y += wrapText(ctx, r, 432, y, 132, 9, { size: 6, color: '#cfc8a8', bold: false }) + 4;
         text(ctx, 'ESC to leave', 320, 320, { size: 6, align: 'center', color: '#93a0b8' });
       },
@@ -716,15 +747,6 @@ export class HubScene extends ArenaScene {
   // -------------------------------------------------------------------------
   draw(ctx) {
     super.draw(ctx);
-    this.drawNpcs(ctx);
-    this.drawHubHud(ctx);
-    if (this.showStats && !this.uiOverlay) this.drawTrainingPanel(ctx);
-  }
-
-  draw(ctx2) {
-    // (single override — see below)
-    ArenaScene.prototype.draw.call(this, ctx2);
-    const ctx = ctx2;
     this.drawNpcs(ctx);
     this.drawHubHud(ctx);
     if (this.showStats && !this.uiOverlay) this.drawTrainingPanel(ctx);

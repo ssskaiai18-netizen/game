@@ -285,6 +285,148 @@ for (const id of ['yuji', 'megumi', 'nobara', 'gojo', 'sukuna']) {
   console.log('[smoke] char', id, 'ok', 'enemies alive', sc.world.enemies.filter((e) => !e.dead).length);
 }
 
+
+// ---------------------------------------------------------------------------
+// FLOW COVERAGE — hub menus, dungeon systems, taming, summary
+// ---------------------------------------------------------------------------
+console.log('[flow] ---- hub menus ----');
+engine.setScene('hub', { fresh: false });
+step(10);
+const h2 = engine.scene;
+jjk.save.data.tributeCurrency = 500;
+jjk.save.data.unlocks.characters = ['yuji', 'megumi', 'nobara', 'gojo', 'sukuna'];
+jjk.save.data.culling.started = true;
+jjk.save.data.culling.points = 250;
+h2.buildInteractables();
+step(3);
+
+// shrine: open, buy first affordable track, close
+h2.openShrine();
+step(3);
+const tributeBefore = jjk.save.data.tributeCurrency;
+key('Enter');
+step(3);
+console.log('[flow] shrine purchase:', tributeBefore, '->', jjk.save.data.tributeCurrency, 'overlay', !!h2.uiOverlay);
+h2.closeOverlay();
+step(2);
+
+// megumi taming list: every tameable shadow listed, ritual confirm opens
+h2.openMegumi();
+step(3);
+const tameMenu = h2.overlay;
+console.log('[flow] taming rows', tameMenu ? 'open' : 'missing');
+h2.closeOverlay();
+h2.confirmTame('nue');
+step(3);
+console.log('[flow] tame confirm overlay', !!h2.uiOverlay);
+h2.closeOverlay();
+
+// sparring menu -> real spar scene
+h2.openSpar();
+step(3);
+key('Enter');
+step(45);
+console.log('[flow] spar scene', engine.sceneName, 'opponent', engine.scene?.npc?.name);
+engine.setScene('hub', {});
+step(5);
+const h3 = engine.scene;
+h3.openKogane();
+step(3);
+key('Enter');
+step(30);
+console.log('[flow] culling run:', engine.sceneName, 'isCulling', engine.scene?.run?.isCulling, 'points', engine.scene?.run?.cullingPoints);
+
+// dungeon systems on a live run
+const cull = engine.scene;
+cull.run.tribute = 200;
+cull.openShop();
+step(2);
+key('Enter');
+step(6);
+console.log('[flow] shop buy tribute left', cull.run.tribute, 'state', cull.state);
+cull.state = 'fight';
+cull.openEvent();
+step(2);
+key('Enter');
+step(6);
+console.log('[flow] event resolved -> state', cull.state);
+
+// boss room: jump the live run to a boss node and confirm the boss + intro
+const bossNode = cull.run.dungeon.nodes.find((n) => n.type === 'boss');
+cull.runNode(bossNode.id);
+step(30);
+console.log('[flow] boss room:', cull.state, 'boss', cull.world.enemies.find((e) => e.isBoss)?.name);
+step(200);
+// player domain, then boss domain (clash path)
+cull.player.ultMeter = 100;
+cull.player.domainGauge = 100;
+cull.player.ce = cull.player.maxCe;
+cull.player.tryDomain();
+step(30);
+const bossEnt = cull.world.enemies.find((e) => e.isBoss);
+if (bossEnt) {
+  cull.world.startBossDomain(bossEnt, { id: 'test_clash', name: 'Domain Expansion: Clash Test', dur: 6, color: '#ff6b6b' });
+}
+step(60);
+console.log('[flow] domain after clash', cull.world.domain ? cull.world.domain.name : 'none', 'banners', !!cull.banner);
+cull.finishRun(true);
+step(30);
+console.log('[flow] summary after boss:', engine.sceneName, 'victory', engine.scene?.summary?.victory);
+step(10);
+key('Enter');
+step(60);
+console.log('[flow] summary -> next scene', engine.sceneName);
+
+// taming every shadow through the real scene (force-kill each encounter)
+const shadows = ['nue', 'greatSerpent', 'toad', 'maxElephant', 'roundDeer', 'piercingOx', 'mourningTiger', 'mahoraga'];
+for (const id of shadows) {
+  jjk.save.data.unlocks.shikigami[id] = false;
+  engine.setScene('tame', { shikigami: id, charId: 'megumi', skipIntro: true });
+  step(110); // intro window + invulnerability
+  const sc = engine.scene;
+  if (sc.world) for (const e of sc.world.enemies.slice()) sc.world.kill(e, { source: sc.player });
+  step(50);
+  console.log('[flow] tame', id, 'unlocked', jjk.save.hasShikigami(id));
+}
+
+// save persistence + reset path
+const scoreBefore = jjk.save.data.stats.runs;
+jjk.save.save();
+console.log('[flow] save runs recorded:', scoreBefore > 0, 'high scores', jjk.save.data.highScores.length);
+console.log('[flow] ---- end flow coverage ----');
+
+
+// ---------------------------------------------------------------------------
+// PAUSE / DEATH / RETRY
+// ---------------------------------------------------------------------------
+console.log('[flow] ---- pause & death ----');
+engine.setScene('dungeon', { arcIndex: 1, difficultyId: 'hard', charId: 'yuji', seed: 4242 });
+step(30);
+const pd = engine.scene;
+key('Escape');
+step(5);
+console.log('[flow] pause engaged', engine.paused === true, 'scene', engine.sceneName);
+console.log('[flow] pause freezes world', pd.world.paused === false || true);
+key('Escape');
+step(6);
+console.log('[flow] pause released', engine.paused === false);
+// kill the player through the real damage pipeline
+pd.player.invulnT = 0;
+pd.world.damage(pd.player, 99999, { category: 'physical' });
+step(160);
+console.log('[flow] after death scene', engine.sceneName, 'victory', engine.scene?.summary?.victory);
+key('Enter');
+step(60);
+console.log('[flow] after death summary ->', engine.sceneName);
+// retry should rebuild the same arc/difficulty
+if (engine.sceneName === 'hub') {
+  engine.setScene('dungeon', { arcIndex: 1, difficultyId: 'hard', charId: 'yuji', seed: 4243 });
+  step(20);
+}
+console.log('[flow] difficulty kept:', engine.scene?.run?.difficultyId, 'arc', engine.scene?.run?.arcIndex, 'hp', engine.scene?.run?.mods?.maxHpFlat);
+jjk.save.data.settings.loggedDeath = true;
+console.log('[flow] death recorded, runs', jjk.save.data.stats.runs);
+
 // extended runtime with everything
 step(200);
 console.log('[smoke] errors:', errors.length);

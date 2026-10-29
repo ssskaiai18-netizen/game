@@ -82,7 +82,7 @@ export function defaultSave() {
     culling: {
       points: 0,
       colonies: ['tokyo1'],
-      participants: {},
+      participants: { higuruma: 120, hakari: 95, kashimo: 80, ishigori: 65, uro: 50, you: 0 },
       rules: [],
       started: false,
     },
@@ -180,7 +180,11 @@ export function sanitize(raw) {
   const cg = raw.culling || {};
   d.culling.points = num(cg.points, 0, 0, 999999);
   if (Array.isArray(cg.colonies)) d.culling.colonies = Array.from(new Set(['tokyo1', ...cg.colonies.filter((x) => typeof x === 'string')]));
-  d.culling.participants = cg.participants && typeof cg.participants === 'object' ? Object.assign({}, cg.participants) : {};
+  d.culling.participants = Object.assign(
+    { higuruma: 120, hakari: 95, kashimo: 80, ishigori: 65, uro: 50, you: 0 },
+    cg.participants && typeof cg.participants === 'object' ? cg.participants : {}
+  );
+  for (const k of Object.keys(d.culling.participants)) d.culling.participants[k] = num(d.culling.participants[k], 0, 0, 999999);
   d.culling.rules = Array.isArray(cg.rules) ? cg.rules.filter((x) => typeof x === 'string') : [];
   d.culling.started = bool(cg.started, false);
 
@@ -318,6 +322,11 @@ export class SaveSystem {
   addTribute(key) {
     this.data.tribute[key] = Math.min(12, (this.data.tribute[key] || 0) + 1);
     this.save();
+  }
+  addTributeCurrency(n) {
+    this.data.tributeCurrency = clamp((this.data.tributeCurrency || 0) + n, 0, 9999999);
+    this.save();
+    return this.data.tributeCurrency;
   }
   addScore(entry) {
     this.data.highScores.push(entry);

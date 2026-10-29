@@ -199,6 +199,7 @@ export class Run {
       }
       if (this.isCulling) {
         data.culling.points += this.cullingPoints + 40;
+      data.culling.participants.you = data.culling.points;
       }
       const arcRewardTribute = this.arc.reward?.tribute || 0;
       data.tributeCurrency += Math.round(arcRewardTribute * diffMult);

@@ -138,7 +138,9 @@ export class DungeonScene extends ArenaScene {
     const diff = this.run.diff;
     list.forEach((entry, i) => {
       if (entry.bossId) {
-        const def = entry.bossId === 'colonyBoss' ? cullingBossFor(0) : BOSSES[entry.bossId];
+        const COLONY_BOSS = { tokyo1: 0, tokyo2: 2, sendai: 3 };
+        const colonyIndex = COLONY_BOSS[this.params.colonyId] ?? 0;
+        const def = entry.bossId === 'colonyBoss' ? cullingBossFor(colonyIndex) : BOSSES[entry.bossId];
         const boss = this.world.spawnEnemy(def, 520, 180, { hpMult: 1, brain: 'boss', dmgMult: diff.enemyDmg });
         boss.isElite = true;
         boss.ultMeter = 0;
@@ -386,11 +388,18 @@ export class DungeonScene extends ArenaScene {
         onClick: () => { if (run.tribute >= 40) { run.tribute -= 40; self.openRewards('upgrade'); } },
       },
       {
-        label: 'Permanent tribute +40',
-        sub: 'Bank tribute into your permanent pool (60)',
+        label: 'Bank 40 tribute',
+        sub: 'Move run tribute into your permanent pool (costs 60 run tribute)',
         color: '#ffd166',
         disabled: run.tribute < 60,
-        onClick: () => { if (run.tribute >= 60) { run.tribute -= 60; self.run.addTribute(40); self.game.audio.play('reward'); self.openShop(); } },
+        onClick: () => {
+          if (run.tribute < 60) return;
+          run.tribute -= 60;
+          self.game.save.addTributeCurrency(40);
+          self.game.toast('+40 permanent tribute', { color: '#ffd166' });
+          self.game.audio.play('reward');
+          self.openShop();
+        },
       },
       { label: 'Leave', color: '#9aa3b2', onClick: () => self.openMap() },
     ];
@@ -442,7 +451,6 @@ export class DungeonScene extends ArenaScene {
         onClick: () => {
           const keepOpen = o.fn?.();
           if (!keepOpen) {
-            const node = this.roomNode;
             this.state = 'eventDone';
             this.openMap();
           }
