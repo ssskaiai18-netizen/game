@@ -113,8 +113,7 @@ function resolveClash(world, challenger, defender) {
   world.fx.text(320 + world.camera.x, 150 + world.camera.y, 'DOMAIN CLASH', { color: '#ffd166', scale: 1.8, life: 2 });
   if (playerWins) {
     const old = world.domain;
-    world.domain = null;
-    if (old) old.owner.inDomain = false;
+    if (old) endDomain(world);
     if (bossActor) {
       bossActor.applyStatus('stun', 0, 1.6);
       bossActor.domainUsed = true;
@@ -130,8 +129,7 @@ function resolveClash(world, challenger, defender) {
     }
   } else {
     const old = world.domain;
-    world.domain = null;
-    if (old) old.owner.inDomain = false;
+    if (old) endDomain(world);
     if (playerActor) {
       playerActor.applyStatus('stun', 0, 1.2);
       playerActor.ce = Math.max(0, playerActor.ce - 25);
@@ -146,7 +144,7 @@ function setTimeoutSafe(fn) {
 }
 
 function domainEnemies(world, actor) {
-  return world.enemies.filter((e) => !e.dead && e !== actor);
+  return world.actors.filter((e) => !e.dead && e !== actor && e.team !== actor.team);
 }
 
 function inside(world, x, y) {
@@ -191,11 +189,13 @@ export function updateDomain(world, dt) {
         endDomain(world);
         return;
       }
+      for (const e of domainEnemies(world, actor)) {
+        if (inside(world, e.x, e.y) && e.invulnT <= 0) e.applyStatus('stun', 0, 0.1);
+      }
       if (d.tick >= 0.7) {
         d.tick = 0;
         for (const e of domainEnemies(world, actor)) {
           if (!inside(world, e.x, e.y)) continue;
-          e.applyStatus('stun', 0, 0.75);
           world.damage(e, 9 * (actor.mods?.domainDmgMult || 1), {
             source: actor,
             category: 'domain',
@@ -248,6 +248,7 @@ export function updateDomain(world, dt) {
       }
       break;
     }
+    case 'chimera_garden':
     case 'chimera_shadow_garden': {
       // summons frenzy, enemies dragged & slowed
       for (const s of world.summons) {
@@ -401,6 +402,7 @@ export function endDomain(world) {
   }
   for (const s of world.summons) {
     if (s.dead) continue;
+    if (s.shadowCopy && s.owner === d.actor) { world.dismissSummon(s, false); continue; }
     s.cdMult = 1;
     if (s.summonBaseDmg) s.dmgMult = s.summonBaseDmg;
     s.speed = s.baseSpeed || s.speed;

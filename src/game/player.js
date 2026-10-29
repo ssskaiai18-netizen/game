@@ -13,24 +13,26 @@ import { getCharacter } from '../data/characters.js';
 import { input } from '../core/input.js';
 import { defaultMods } from '../data/upgrades.js';
 import { SHIKIGAMI, summonListFor } from '../data/shikigami.js';
+import { sorcererLook } from '../data/sorcerer.js';
 
 export class Player extends Entity {
   constructor(world, opts = {}) {
     const charId = opts.charId || 'yuji';
-    const def = getCharacter(charId);
     const save = opts.save;
+    const profile = save?.data?.sorcerer;
+    const def = getCharacter(profile?.technique || charId);
     const mods = opts.mods || defaultMods();
     const tribute = save?.data?.tribute || {};
-    const mastery = save?.data?.mastery?.[charId] || 0;
+    const mastery = profile?.mastery ?? (save?.data?.mastery?.[charId] || 0);
 
     const hpBonus = (tribute.vitality || 0) * 6 + (mods.maxHpFlat || 0) + mastery * 3;
     const ceBonus = (tribute.reservoir || 0) * 5 + (mods.maxCeFlat || 0);
 
     super(world, {
       team: 'player',
-      name: def.name,
+      name: profile?.name || def.name,
       kind: 'player',
-      look: def.look,
+      look: profile ? sorcererLook(profile.appearance) : def.look,
       rig: null,
       x: opts.x || 320,
       y: opts.y || 220,
@@ -42,7 +44,8 @@ export class Player extends Entity {
       dmgMult: def.power,
     });
     this.char = def;
-    this.charId = charId;
+    this.charId = profile?.technique || charId;
+    this.profile = profile;
     this.isPlayer = true;
     this.mods = mods;
     this.save = save;
@@ -55,10 +58,10 @@ export class Player extends Entity {
 
     // ability slots
     this.basic = def.basic;
-    this.slots = def.abilities.slice(0, 4);
-    this.ultimate = def.ultimate;
-    this.domainAbility = def.domain;
-    if (opts.extraAbilities) this.slots = this.slots.concat(opts.extraAbilities);
+    this.slots = def.abilities.slice(0, profile ? profile.unlocked : 4);
+    this.ultimate = !profile || profile.trainingWins >= 3 ? def.ultimate : null;
+    this.domainAbility = !profile || profile.trainingWins >= 4 ? def.domain : null;
+    if (opts.extraAbilities && !profile) this.slots = this.slots.concat(opts.extraAbilities);
 
     // combo
     this.comboIdx = 0;
@@ -337,6 +340,8 @@ export class Player extends Entity {
       this.world.fx.text(this.x, this.y - 34, 'NO CE', { color: '#7ec8ff', life: 0.5, scale: 0.8 });
       return;
     }
+    const gardenSummon = ab.type === 'summon' && this.world.domain?.id === 'chimera_garden' && this.world.domain.owner === this;
+    if (gardenSummon) this.cdMap[ab.id] = 0;
     if ((this.cdMap[ab.id] || 0) > 0) {
       this.world.audio?.play('deny');
       return;
@@ -570,6 +575,7 @@ export class Player extends Entity {
   }
 
   tryUltimate() {
+    if (!this.ultimate) { this.world.fx.text(this.x, this.y - 38, 'TRAIN TO UNLOCK', { color: '#ffd166', life: 0.8 }); return; }
     if (!this.ultimate || this.stunT > 0) return;
     const w = this.world;
     if (this.charId === 'megumi') {
@@ -804,7 +810,8 @@ export class Player extends Entity {
     if (this.world.summonShikigami) {
       const list = this.summonOptions || [];
       const id = list[this.summonIndex] || 'divineDogs';
-      this.world.summonShikigami(this, id);
+      const garden = this.world.domain?.id === 'chimera_garden' && this.world.domain.owner === this;
+      this.world.summonShikigami(this, id, garden ? { allowDuplicate: true, shadowCopy: true } : {});
     }
   }
 

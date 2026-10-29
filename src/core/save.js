@@ -4,6 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { clamp } from './util.js';
+import { TECHNIQUES, SKINS, HAIRS, UNIFORMS, STYLES } from '../data/sorcerer.js';
 
 export const SAVE_VERSION = 3;
 const KEY = 'jjk_roguelite_save_v3';
@@ -40,6 +41,7 @@ export const MAHORAGA_CATEGORIES = [
 export function defaultSave() {
   return {
     version: SAVE_VERSION,
+    sorcerer: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     unlocks: {
@@ -124,6 +126,19 @@ export function sanitize(raw) {
   const d = defaultSave();
   if (!raw || typeof raw !== 'object') return d;
 
+  const profile = raw.sorcerer;
+  if (profile && TECHNIQUES.includes(profile.technique)) {
+    const a = profile.appearance || {};
+    const index = (v, list) => Number.isInteger(v) && v >= 0 && v < list.length ? v : 0;
+    d.sorcerer = {
+      name: typeof profile.name === 'string' ? profile.name.trim().slice(0, 20) || 'Sorcerer' : 'Sorcerer',
+      technique: profile.technique,
+      appearance: { skin: index(a.skin, SKINS), hair: index(a.hair, HAIRS), uniform: index(a.uniform, UNIFORMS), style: index(a.style, STYLES) },
+      unlocked: Math.floor(num(profile.unlocked, 2, 2, 4)),
+      trainingWins: Math.floor(num(profile.trainingWins, 0, 0, 999999)),
+      mastery: Math.floor(num(profile.mastery, 0, 0, 999999)),
+    };
+  }
   d.createdAt = num(raw.createdAt, Date.now(), 0);
   d.updatedAt = num(raw.updatedAt, Date.now(), 0);
 

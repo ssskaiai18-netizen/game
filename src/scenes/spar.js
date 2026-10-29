@@ -124,6 +124,17 @@ export class SparScene extends ArenaScene {
       const reward = 12;
       save.data.tributeCurrency += reward;
       save.data.stats.kills++;
+      const profile = save.data.sorcerer;
+      if (profile && this.opponentId === profile.technique) {
+        profile.trainingWins++;
+        profile.mastery++;
+        if (profile.unlocked < 4) {
+          profile.unlocked++;
+          this.trainingReward = `Unlocked ${CHARACTERS[profile.technique].abilities[profile.unlocked - 1].name}`;
+        } else if (profile.trainingWins === 3) this.trainingReward = 'Ultimate unlocked';
+        else if (profile.trainingWins === 4 && CHARACTERS[profile.technique].domain) this.trainingReward = 'Domain unlocked';
+        else this.trainingReward = `Technique mastery ${profile.mastery}`;
+      }
       save.data.mastery[save.data.lastChar || 'yuji'] = (save.data.mastery[save.data.lastChar || 'yuji'] || 0) + 1;
       save.save();
       this.reward = reward;
@@ -173,6 +184,7 @@ export class SparScene extends ArenaScene {
         text(ctx, k, 150, 132 + i * 16, { size: 7, color: '#8b98b0' });
         text(ctx, `${v}`, 490, 132 + i * 16, { size: 7, align: 'right', color: '#e8eef8' });
       });
+      if (this.trainingReward) text(ctx, this.trainingReward, 320, 211, { size: 7, align: 'center', color: '#7cf0a0' });
       if (this.result === 'win') text(ctx, `Training reward: +${this.reward} 呪`, 320, 222, { size: 8, align: 'center', color: '#ffd166' });
       text(ctx, 'Click / Enter to return to the hub', 320, 246, { size: 7, align: 'center', color: '#93a0b8' });
     }

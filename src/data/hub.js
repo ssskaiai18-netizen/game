@@ -48,6 +48,7 @@ export const HUB_NPCS = [
   {
     id: 'nobara', name: 'Nobara Kugisaki', role: 'story', x: 764, y: 436, facingX: -1, wander: true, charId: 'nobara',
   },
+  { id: 'sukuna', name: 'Ryomen Sukuna', role: 'story', x: 825, y: 370, facingX: -1, charId: 'sukuna' },
   {
     id: 'gojo', name: 'Satoru Gojo', role: 'story', x: 566, y: 470, facingX: 1, wander: false, charId: 'gojo',
   },

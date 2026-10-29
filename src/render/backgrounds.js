@@ -236,7 +236,7 @@ export function drawDomainScenery(ctx, id, t, cam) {
       ctx.arc(320, 180, 40 + i * 34 + Math.sin(t * 2 + i) * 6, 0, TAU);
       ctx.stroke();
     }
-  } else if (id === 'chimera_shadow_garden') {
+  } else if (id === 'chimera_shadow_garden' || id === 'chimera_garden') {
     ctx.globalAlpha = 0.55;
     ctx.fillStyle = '#0a0818';
     ctx.fillRect(cam.x, cam.y, 640, 360);

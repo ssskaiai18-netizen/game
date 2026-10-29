@@ -19,12 +19,20 @@ export function summonShikigami(world, owner, id, opts = {}) {
     world.fx.text(owner.x, owner.y - 36, 'ALREADY SUMMONED', { color: '#a79bff', scale: 0.75, life: 0.7 });
     return null;
   }
-  // limit total summons
+  // Shadow copies never displace pre-existing summons. A strict per-entity
+  // cap also covers multi-creature summons such as Divine Dogs.
+  const limit = opts.shadowCopy ? 10 : 5 + (mods.summonExtra || 0);
   const activeCount = world.summons.filter((s) => !s.dead).length;
-  if (activeCount >= 5 + (mods.summonExtra || 0)) {
-    world.dismissSummon(world.summons[0], false);
+  if (activeCount >= limit) {
+    if (opts.shadowCopy) {
+      world.fx.text(owner.x, owner.y - 36, 'SHADOW LIMIT', { color: '#a79bff', life: 0.7 });
+      return null;
+    }
+    const oldest = world.summons.find((s) => !s.dead && !s.isUltimateSummon);
+    if (oldest) world.dismissSummon(oldest, false);
   }
-  const count = (def.count || 1) + (opts.extra || 0);
+  const remaining = limit - world.summons.filter((s) => !s.dead).length;
+  const count = Math.min(remaining, (def.count || 1) + (opts.extra || 0));
   const created = [];
   for (let i = 0; i < count; i++) {
     const ang = (i / Math.max(1, count)) * Math.PI * 2 + world.time;
@@ -53,9 +61,11 @@ export function summonShikigami(world, owner, id, opts = {}) {
     e.isSummon = true;
     e.owner = owner;
     e.summonId = id;
+    e.shadowCopy = !!opts.shadowCopy;
+    if (e.shadowCopy) e.pal = { main: '#10101a', dark: '#050509', light: '#252037', accent: '#10101a' };
     e.role = def.role;
     e.rig = def.rig;
-    e.pal = def.pal;
+    if (!e.shadowCopy) e.pal = def.pal;
     e.maxLifetime = e.lifetime;
     e.spawnT = 0.4;
     e.dmgMult = (owner.dmgMult || 1) * 0.85 * (opts.dmgMult || 1) *

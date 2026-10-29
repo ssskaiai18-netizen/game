@@ -54,7 +54,6 @@ export class HubScene extends ArenaScene {
       facingX: n.facingX || 1,
     })).filter((n) => {
       if (n.id === 'nobara') return this.game.save.hasCharacter('nobara');
-      if (n.id === 'gojo') return this.game.save.hasCharacter('gojo');
       return true;
     });
     this.world.camera.x = 480 - 320;
@@ -185,6 +184,8 @@ export class HubScene extends ArenaScene {
     } else if (npc.charId === 'nobara') {
       lines.push(['Nobara', 'I am not here to support anyone. My technique is the best one here.']);
       lines.push(['Nobara', 'Nails first, questions later. Mark them, then pull the hairpin.']);
+    } else if (npc.charId === 'sukuna') {
+      lines.push(['Sukuna', 'Show me what your technique can do. Find me in the training hall if you dare.']);
     } else if (npc.charId === 'gojo') {
       lines.push(['Gojo', 'You are doing fine. Which is exactly what I would say if you were not.']);
       lines.push(['Gojo', 'Blue pulls. Red pushes. Put them together and the world politely steps aside.']);
@@ -568,10 +569,10 @@ export class HubScene extends ArenaScene {
     const self = this;
     const opponents = [
       { id: 'kusakabe', name: 'Kusakabe (instructor)', locked: false, desc: 'A measured swordsman. Punishes greedy attacks.' },
-      ...PLAYABLE_ORDER.filter((id) => id !== this.player.charId).map((id) => ({
+      ...PLAYABLE_ORDER.map((id) => ({
         id,
         name: CHARACTERS[id].name,
-        locked: !save.hasCharacter(id),
+        locked: false,
         desc: CHARACTERS[id].blurb,
       })),
     ];
@@ -606,7 +607,7 @@ export class HubScene extends ArenaScene {
         menu.draw(ctx, 70, 96, 300, { rowH: 22, gap: 3 });
         panel(ctx, 392, 96, 184, 170, { fill: 'rgba(14,16,26,0.96)', border: '#3a3f52', inner: false });
         text(ctx, 'RULES', 404, 112, { size: 7, color: '#ffd166' });
-        wrapText(ctx, 'Real combat. First to zero HP loses. Your opponent uses their actual techniques, dodges, and attempts Black Flash.', 404, 128, 160, 9, { size: 6, color: '#b9c4d8', bold: false });
+        wrapText(ctx, 'Win against your own technique trainer to unlock skills, ultimate and domain. Other opponents grant tribute only.', 404, 128, 160, 9, { size: 6, color: '#b9c4d8', bold: false });
         text(ctx, `DIFFICULTY: ${['Friendly', 'Serious', 'Lethal'][skill <= 0.4 ? 0 : skill <= 0.65 ? 1 : 2]}`, 404, 200, { size: 7, color: '#8fd7ff' });
         text(ctx, '← → to change', 404, 212, { size: 6, color: '#93a0b8' });
         text(ctx, 'ESC to leave', 320, 334, { size: 6, align: 'center', color: '#93a0b8' });

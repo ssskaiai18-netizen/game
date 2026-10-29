@@ -59,9 +59,7 @@ const game = {
 
 saveSystem.load();
 audio.setMuted(!saveSystem.data.settings.audio);
-if (saveSystem.data.lastChar && saveSystem.hasCharacter(saveSystem.data.lastChar)) {
-  game.selectedChar = saveSystem.data.lastChar;
-}
+if (saveSystem.data.sorcerer) game.selectedChar = saveSystem.data.sorcerer.technique;
 
 const engine = new Engine(canvas, game);
 game.engine = engine;

@@ -119,6 +119,7 @@ export class Hud {
         color: p.bfState && p.bfState.windowOpen ? '#ff2a4a' : '#8b98b0',
       });
     }
+    if (p.profile) text(ctx, `MASTERY ${p.profile.mastery} · TRAINING ${p.profile.trainingWins}`, x, cy + 15, { size: 6, color: '#9fc0ff' });
     // domain status
     if (this.scene.world?.domain) {
       const d = this.scene.world.domain;
@@ -129,14 +130,31 @@ export class Hud {
 
   drawAbilityBar(ctx, p) {
     if (this.showTouch) {
+      // Touch buttons remain in their original positions; show their names and
+      // resource/cooldown state in a compact readout away from the buttons.
+      (p.slots || []).forEach((ab, i) => {
+        const cd = Math.max(0, p.cdMap[ab.id] || 0);
+        const state = cd > 0 ? `${cd.toFixed(1)}s` : p.ce < (ab.cost || 0) ? 'NO CE' : 'READY';
+        text(ctx, `${i + 1} ${ab.name} · ${state} / ${ab.cd || 0}s · ${ab.cost || 0} CE`, 10, 120 + i * 9,
+          { size: 6, color: cd > 0 ? '#ff8a8a' : '#c9d3e0' });
+      });
+      if (!p.ultimate) text(ctx, 'ULT: TRAIN TO UNLOCK', 10, 158, { size: 6, color: '#8b98b0' });
+      if (p.domainAbility) text(ctx, `DOM: ${p.domainCd > 0 ? p.domainCd.toFixed(1) + 's' : p.domainAbility.cost + ' CE'}`, 10, 167, { size: 6, color: '#c9a2ff' });
       this.drawSummonSelect(ctx, p);
       return;
     }
     const x = 14;
     const y = 322;
     const slots = p.slots || [];
-    slots.forEach((ab, i) => {
+    for (let i = 0; i < 4; i++) {
+      const ab = slots[i];
       const bx = x + i * 46;
+      if (!ab) {
+        panel(ctx, bx, y, 42, 26, { fill: 'rgba(10,12,20,0.86)', border: '#2a2f3c', inner: false });
+        text(ctx, 'LOCKED', bx + 21, y + 15, { size: 6, align: 'center', color: '#5b6478' });
+        keyHint(ctx, bx + 1, y - 2, `${i + 1}`, '');
+        continue;
+      }
       const cd = p.cdMap[ab.id] || 0;
       const cdFrac = cd > 0 ? cd / (ab.cd || 1) : 0;
       const affordable = p.ce >= (ab.cost || 0) * (p.mods?.ceCostMult || 1);
@@ -146,28 +164,28 @@ export class Hud {
       ctx.textAlign = 'center';
       ctx.fillText(ab.name.length > 15 ? ab.name.slice(0, 14) + '…' : ab.name, bx + 21, y + 9);
       ctx.textAlign = 'left';
-      text(ctx, `${ab.cost || 0}`, bx + 4, y + 22, { size: 6, color: '#7ec8ff' });
-      text(ctx, cd > 0 ? `${cd.toFixed(1)}` : 'READY', bx + 38, y + 22, {
+      text(ctx, `${ab.cost || 0}CE`, bx + 4, y + 22, { size: 5, color: '#7ec8ff' });
+      text(ctx, cd > 0 ? `${cd.toFixed(1)}/${ab.cd || 0}` : affordable ? 'READY' : 'NO CE', bx + 38, y + 22, {
         size: 6,
         align: 'right',
-        color: cd > 0 ? '#ff8a8a' : '#7cf0a0',
+        color: cd > 0 || !affordable ? '#ff8a8a' : '#7cf0a0',
       });
       if (cdFrac > 0) {
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
         ctx.fillRect(bx + 1, y + 1, 40, 24 * cdFrac);
       }
       keyHint(ctx, bx + 1, y - 2, `${i + 1}`, '');
-    });
+    }
     // ultimate + domain
     const ux = x + 4 * 46;
-    const ultReady = p.charId === 'megumi' ? p.ultMeter >= 50 : p.ultMeter >= (p.ultimate?.ultCost || 100);
+    const ultReady = !!p.ultimate && (p.charId === 'megumi' ? p.ultMeter >= 50 : p.ultMeter >= (p.ultimate.ultCost || 100));
     panel(ctx, ux, y, 62, 26, { fill: 'rgba(10,12,20,0.86)', border: ultReady ? '#ffb03a' : '#2a2f3c', inner: false });
-    text(ctx, p.charId === 'megumi' ? (p.ultMeter >= 100 ? 'MAHORAGA' : 'AGITO') : 'ULTIMATE', ux + 31, y + 9, {
+    text(ctx, !p.ultimate ? 'LOCKED' : p.charId === 'megumi' ? (p.ultMeter >= 100 ? 'MAHORAGA' : 'AGITO') : 'ULTIMATE', ux + 31, y + 9, {
       size: 6,
       align: 'center',
       color: ultReady ? '#ffd166' : '#5b6478',
     });
-    keyHint(ctx, ux + 6, y + 21, 'R', ultReady ? 'READY' : `${Math.floor(p.ultMeter)}%`);
+    keyHint(ctx, ux + 6, y + 21, 'R', !p.ultimate ? 'TRAIN' : ultReady ? 'READY' : `${Math.floor(p.ultMeter)}%`);
     // domain
     const dx = ux + 68;
     const domainReady = p.domainAbility && p.domainCd <= 0 && p.ce >= (p.domainAbility.cost || 60);
