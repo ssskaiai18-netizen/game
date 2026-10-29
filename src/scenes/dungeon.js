@@ -34,7 +34,7 @@ export class DungeonScene extends ArenaScene {
   enter() {
     const arcIndex = this.params.arcIndex ?? 0;
     const run = new Run(this.game, {
-      charId: this.params.charId || this.game.selectedChar || 'yuji',
+      charId: this.params.charId || (this.game.save.data.custom?.created ? 'custom' : 'yuji'),
       arcIndex,
       difficultyId: this.params.difficultyId || 'normal',
       seed: this.params.seed,

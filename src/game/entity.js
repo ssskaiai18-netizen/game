@@ -132,6 +132,24 @@ export class Entity {
     this.shadow = true;
     this.hitFlashColor = '#ffffff';
     this.buffered = null;
+    // refined-technique state
+    this.divergentState = null;
+    this.transformT = 0;
+    this.transformDur = 0;
+    this.transformName = null;
+    this.transformAbility = null;
+    this.transformSlots = null;
+    this._preTransform = null;
+    this.domainStunCd = 0; // anti-stunlock clock for Incomplete Shrine
+    this.isShadowCopy = false;
+    this.isFusionSummon = false;
+    this.fusionOf = null;
+  }
+
+  /** Abilities this actor can currently use (transform kit replaces the base kit). */
+  activeAbilities(defAbilities) {
+    if (this.transformT > 0 && this.transformSlots) return this.transformSlots;
+    return defAbilities || this.abilities || [];
   }
 
   get alive() {
@@ -277,6 +295,7 @@ export class Entity {
       }
     }
     if (this.disruptT > 0) this.disruptT -= dt;
+    if (this.domainStunCd > 0) this.domainStunCd -= dt;
     if (this.regen > 0 && !this.dead) this.heal(this.regen * dt);
     for (const k of Object.keys(this.cdMap)) {
       if (this.cdMap[k] > 0) this.cdMap[k] = Math.max(0, this.cdMap[k] - dt);

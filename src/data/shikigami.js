@@ -295,7 +295,7 @@ export const AGITO = {
   id: 'agito',
   name: 'Agito',
   title: 'Totality of shadow',
-  desc: 'A combined shikigami of the Divine Dogs, Nue and Great Serpent. Sustained, versatile pressure.',
+  desc: 'A combined shikigami. Requires Round Deer, Nue, Mourning Tiger and Great Serpent tamed. Sustained, versatile pressure.',
   cost: 0,
   hp: 340,
   duration: 120,
@@ -330,8 +330,8 @@ export const TOTALITY = {
   agito: {
     id: 'agito',
     name: 'Agito',
-    desc: 'Combined Totality of the Divine Dogs, Nue and Great Serpent. Unlocked in the Ten Shadows ultimate at 50% meter.',
-    requires: ['divineDogs', 'nue', 'greatSerpent'],
+    desc: 'Combined Totality. Unlocked in the Ten Shadows ultimate at 50% meter once Round Deer, Nue, Mourning Tiger and Great Serpent are tamed.',
+    requires: ['roundDeer', 'nue', 'mourningTiger', 'greatSerpent'],
     bonus: { duration: 120 },
     unlock: 'Tame Divine Dogs, Nue and Great Serpent.',
   },
@@ -345,8 +345,136 @@ export const TOTALITY = {
   },
 };
 
+
+// ---------------------------------------------------------------------------
+// Shikigami Fusion — pick any two tamed shadows; named pairs have bespoke
+// variations, every other pair produces a generic chimera that inherits the
+// first technique of each parent plus the shared Lift & Slam.
+// ---------------------------------------------------------------------------
+const LIFT_SLAM = { id: 'fusionLiftSlam', name: 'Lift & Slam', type: 'aoe', dmg: 20, startup: 0.3, active: 0.12, recovery: 0.5, category: 'blunt', color: '#c9a2ff', anim: 'attack', aoe: { radius: 46, atTarget: true, delay: 0.28, root: 0.9, knockback: 170, shake: 5 }, cd: 6 };
+
+export const FUSIONS = {
+  'rabbitEscape+toad': {
+    name: 'Winged Toad Swarm', title: 'Toad × Rabbit Escape',
+    desc: 'A swarm of small flying toads. They lift the enemy together, hold them in the air, then slam them down.',
+    rig: 'toad', count: 5, speed: 165, hp: 46, duration: 13, scale: 0.7, role: 'swarm', hover: 16,
+    pal: { main: '#5a6a4a', dark: '#2c3824', light: '#c8d8a8', accent: '#ffb0c8' },
+  },
+  'divineDogs+nue': {
+    name: 'Storm Hound', title: 'Divine Dogs × Nue',
+    desc: 'A winged hound that dives with thunder on its claws.',
+    rig: 'nue', count: 1, speed: 160, hp: 150, duration: 15, scale: 1.1, role: 'aerial', hover: 12,
+    pal: { main: '#3a3550', dark: '#241f33', light: '#8f7bff', accent: '#ffe14d' },
+  },
+  'greatSerpent+nue': {
+    name: 'Tempest Serpent', title: 'Great Serpent × Nue',
+    desc: 'A storm-serpent that strikes from below and from above in the same breath.',
+    rig: 'greatSerpent', count: 1, speed: 140, hp: 170, duration: 15, scale: 1.15, role: 'ambush',
+    pal: { main: '#4a3b6b', dark: '#2a2040', light: '#8fd7ff', accent: '#ffe14d' },
+  },
+  'roundDeer+toad': {
+    name: 'Verdant Warden', title: 'Round Deer × Toad',
+    desc: 'A warden that mends its summoner and roots enemies in marsh-shadow.',
+    rig: 'roundDeer', count: 1, speed: 110, hp: 190, duration: 16, scale: 1.1, role: 'support',
+    pal: { main: '#5a6a4a', dark: '#2c3026', light: '#bff0d0', accent: '#f0778a' },
+  },
+  'maxElephant+piercingOx': {
+    name: 'Flood Ox', title: 'Max Elephant × Piercing Ox',
+    desc: 'An unstoppable charge carrying a flood behind it.',
+    rig: 'piercingOx', count: 1, speed: 120, hp: 230, duration: 15, scale: 1.25, role: 'charge',
+    pal: { main: '#4a4a52', dark: '#2a2a30', light: '#9fb8c9', accent: '#ffd166' },
+  },
+  'nue+rabbitEscape': {
+    name: 'Thunder Warren', title: 'Nue × Rabbit Escape',
+    desc: 'Too many small wings, all of them sparking.',
+    rig: 'rabbit', count: 6, speed: 170, hp: 40, duration: 12, scale: 0.75, role: 'swarm', hover: 14,
+    pal: { main: '#d8d0e0', dark: '#6a5a7a', light: '#f2edf8', accent: '#ffe14d' },
+  },
+  'divineDogs+greatSerpent': {
+    name: 'Abyss Hound', title: 'Divine Dogs × Great Serpent',
+    desc: 'A hound that hunts through the floor itself.',
+    rig: 'divineDog', count: 1, speed: 145, hp: 180, duration: 15, scale: 1.2, role: 'ambush',
+    pal: { main: '#2a2040', dark: '#17102a', light: '#a78bff', accent: '#c9a2ff' },
+  },
+  'mourningTiger+roundDeer': {
+    name: 'Pale Tiger', title: 'Mourning Tiger × Round Deer',
+    desc: 'A silent predator that closes its own wounds between kills.',
+    rig: 'mourningTiger', count: 1, speed: 150, hp: 190, duration: 16, scale: 1.15, role: 'predator',
+    pal: { main: '#8a7a64', dark: '#3a3026', light: '#f0e6d0', accent: '#bff0d0' },
+  },
+};
+
+export function fusionKey(a, b) {
+  return [a, b].sort().join('+');
+}
+
+export function getFusionDef(aId, bId) {
+  const a = SHIKIGAMI[aId];
+  const b = SHIKIGAMI[bId];
+  if (!a || !b || aId === bId) return null;
+  const named = FUSIONS[fusionKey(aId, bId)];
+  const abilities = [];
+  const seen = new Set();
+  for (const src of [a, b]) {
+    for (const ab of src.abilities || []) {
+      if (seen.has(ab.id)) continue;
+      seen.add(ab.id);
+      abilities.push({ ...ab, id: 'fus_' + ab.id, cd: ab.cd || 2.5 });
+      if (abilities.length >= 2) break;
+    }
+    if (abilities.length >= 2) break;
+  }
+  abilities.push({ ...LIFT_SLAM });
+  if (named) {
+    return {
+      id: 'fusion_' + fusionKey(aId, bId).replace('+', '_'),
+      name: named.name, title: named.title, desc: named.desc,
+      cost: 30, hp: named.hp, duration: named.duration, speed: named.speed,
+      rig: named.rig, pal: named.pal, scale: named.scale, count: named.count || 1,
+      hover: named.hover || 0, role: named.role, isFusion: true, fusionOf: [aId, bId],
+      ai: { preferredRange: named.role === 'swarm' ? 22 : 30, cooldown: 1.1, aggression: 0.85 },
+      abilities,
+    };
+  }
+  return {
+    id: 'fusion_' + fusionKey(aId, bId).replace('+', '_'),
+    name: `${a.name} × ${b.name}`, title: 'Chimera', desc: `A chimera of ${a.name} and ${b.name}: one technique from each parent, plus Lift & Slam.`,
+    cost: 30, hp: Math.round(((a.hp || 100) + (b.hp || 100)) * 0.8), duration: 14,
+    speed: Math.round(((a.speed || 110) + (b.speed || 110)) / 2),
+    rig: a.rig, pal: { main: '#241c34', dark: '#12101c', light: '#a79bff', accent: '#c9a2ff' },
+    scale: Math.max(a.scale || 1, b.scale || 1), count: 1, role: a.role || 'rush', isFusion: true, fusionOf: [aId, bId],
+    ai: { preferredRange: 28, cooldown: 1.1, aggression: 0.85 },
+    abilities,
+  };
+}
+
+export const AGITO_REQUIRES = ['roundDeer', 'nue', 'mourningTiger', 'greatSerpent'];
+export function canSummonAgito(owned) {
+  return AGITO_REQUIRES.every((id) => !!owned?.[id]);
+}
+
 export function getSummon(id) {
   if (id === 'agito') return AGITO;
+  if (SHIKIGAMI[id]) return SHIKIGAMI[id];
+  if (typeof id === 'string' && id.startsWith('fusion_')) {
+    const parts = id.slice('fusion_'.length).split('_');
+    // fusion ids encode the pair with an underscore; recover by matching known pairs
+    for (const key of Object.keys(FUSIONS)) {
+      if ('fusion_' + key.replace('+', '_') === id) {
+        const [a, b] = key.split('+');
+        return getFusionDef(a, b);
+      }
+    }
+    if (parts.length >= 2) {
+      // generic pairs were encoded the same way; try all splits
+      for (let i = 1; i < parts.length; i++) {
+        const a = parts.slice(0, i).join('_');
+        const b = parts.slice(i).join('_');
+        // shikigami ids are camelCase without underscores, so this only hits named keys above
+        void a; void b;
+      }
+    }
+  }
   return SHIKIGAMI[id];
 }
 

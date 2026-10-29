@@ -34,7 +34,7 @@ export class TitleScene {
     const hasProgress = save.data.stats.runs > 0 || save.data.story.cleared.some(Boolean);
     this.menu = new VerticalMenu([
       { label: hasProgress ? 'Continue' : 'Enter Jujutsu High', sub: hasProgress ? 'Return to the courtyard' : 'Begin your first run', onClick: () => this.enterHub() },
-      { label: 'Character Select', sub: 'Choose your sorcerer', onClick: () => this.game.engine.go('charSelect', { from: 'title' }) },
+      { label: 'Sorcerer File', sub: 'Your original sorcerer & trainer codex', onClick: () => this.game.engine.go(this.game.save.data.custom?.created ? 'charSelect' : 'create', { from: 'title' }) },
       { label: 'How to Play', sub: 'Controls & core systems', onClick: () => (this.mode = 'help') },
       { label: 'High Scores', sub: 'Local leaderboard', onClick: () => (this.mode = 'scores') },
       { label: save.data.settings.audio ? 'Audio: ON' : 'Audio: OFF', onClick: () => this.toggleAudio() },
@@ -54,6 +54,10 @@ export class TitleScene {
 
   enterHub() {
     this.game.audio.init();
+    if (!this.game.save.data.custom?.created) {
+      this.game.engine.go('create', { from: 'title' }, 0.35);
+      return;
+    }
     this.game.engine.go('hub', { fresh: true }, 0.35);
   }
 

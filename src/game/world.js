@@ -12,8 +12,10 @@ import { drawActor } from '../render/actor.js';
 import { drawBackground } from '../render/backgrounds.js';
 import { updateAI } from './ai.js';
 import { getEnemy } from '../data/enemies.js';
-import { summonShikigami, spawnUltimateSummon, commandSummons, spawnAdds, detonateEnemy, handleSummonDeath } from './summon.js';
+import { summonShikigami, spawnUltimateSummon, commandSummons, summonFusion, spawnAdds, detonateEnemy, handleSummonDeath } from './summon.js';
 import { startDomain, startBossDomain, updateDomain, endDomain } from './domain.js';
+import { updateDivergent, endTransform } from './combat.js';
+import { drawDomainScenery } from '../render/backgrounds.js';
 
 export function freshStats() {
   return {
@@ -89,6 +91,8 @@ export class World {
     };
     this.onSummonCommand = (actor, ab) => commandSummons(this, actor, ab);
     this.onSummonAdds = (actor, ab) => spawnAdds(this, actor, ab);
+    this.onFusion = (actor, ab) => summonFusion(this, actor, ab);
+    this.shadowPool = []; // pooled shadow-copy entities (Chimera Shadow Garden)
     this.onDomainRequest = (actor, ab) => startDomain(this, actor, ab);
     this.onTenShadowsUlt = (actor, ab) => actor.tryUltimate?.();
     this.spawnUltimateSummon = (owner, id) => spawnUltimateSummon(this, owner, id);
@@ -293,6 +297,11 @@ export class World {
       }
       // ability phases
       if (a.phase) this.advanceActorAbility(a, dt);
+      if (a.divergentState) updateDivergent(this, a, dt);
+      if (a.transformT > 0) {
+        a.transformT -= dt;
+        if (a.transformT <= 0) endTransform(this, a);
+      }
       // ai / player
       if (a.isPlayer) {
         a.controller?.update(dt);
@@ -812,6 +821,12 @@ export class World {
     s.dead = true;
     s.deathT = 0;
     s.removed = true;
+    if (s.isShadowCopy) {
+      // return the entity to the pool instead of dropping it for the GC
+      const ai = this.actors.indexOf(s); if (ai >= 0) this.actors.splice(ai, 1);
+      const si = this.summons.indexOf(s); if (si >= 0) this.summons.splice(si, 1);
+      if (this.shadowPool.length < 12) this.shadowPool.push(s);
+    }
     this.fx.burst(s.x, s.y - 10, 14, { color: s.pal?.light || '#a79bff', speed: 110, life: 0.5, glow: true });
     this.fx.ring(s.x, s.y - 8, 24, '#a79bff', 0.35, 2);
     this.game.audio?.play('summon');
@@ -824,6 +839,12 @@ export class World {
   draw(ctx) {
     const cam = this.camera;
     drawBackground(ctx, this, cam);
+    if (this.domain) {
+      ctx.save();
+      ctx.translate(Math.round(-cam.x + this.fx.shakeX), Math.round(-cam.y + this.fx.shakeY));
+      drawDomainScenery(ctx, this.domain.id, this.time, cam);
+      ctx.restore();
+    }
     ctx.save();
     ctx.translate(Math.round(-cam.x + this.fx.shakeX), Math.round(-cam.y + this.fx.shakeY));
     this.drawPickups(ctx);

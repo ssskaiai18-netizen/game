@@ -8,6 +8,7 @@ import { defaultMods, UPGRADES, rollUpgrades, makeUpgradeContext } from '../data
 import { ARCS, DIFFICULTIES } from '../data/story.js';
 import { generateDungeon, nodeById, ROOM_TYPES } from './dungeon.js';
 import { getCharacter } from '../data/characters.js';
+import { buildCustomDef } from '../data/techniques.js';
 
 export class Run {
   constructor(game, opts = {}) {
@@ -51,6 +52,7 @@ export class Run {
   }
 
   get char() {
+    if (this.charId === 'custom' && this.game.save?.data?.custom?.techniqueId) return buildCustomDef(this.game.save);
     return getCharacter(this.charId);
   }
 
@@ -186,7 +188,8 @@ export class Run {
     data.stats.totalDamage += Math.round(this.damageDealt);
     data.stats.bestHit = Math.max(data.stats.bestHit, Math.round(this.highestHit));
     data.stats.bestScore = Math.max(data.stats.bestScore, scoreFinal);
-    data.mastery[this.charId] = (data.mastery[this.charId] || 0) + 1 + Math.floor(this.roomsCleared / 3);
+    if (this.charId === 'custom') data.custom.mastery = (data.custom.mastery || 0) + 1 + Math.floor(this.roomsCleared / 3);
+    else data.mastery[this.charId] = (data.mastery[this.charId] || 0) + 1 + Math.floor(this.roomsCleared / 3);
 
     let unlocks = [];
     if (victory) {

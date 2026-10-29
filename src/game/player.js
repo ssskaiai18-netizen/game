@@ -7,17 +7,17 @@
 // ---------------------------------------------------------------------------
 
 import { Entity } from './entity.js';
-import { castAbility, ceCost, computeDamage, spawnBeam } from './combat.js';
+import { castAbility, ceCost, computeDamage, spawnBeam, triggerDivergent, activateTransform } from './combat.js';
 import { clamp, angleDiff, dist, TAU } from '../core/util.js';
 import { getCharacter } from '../data/characters.js';
 import { input } from '../core/input.js';
 import { defaultMods } from '../data/upgrades.js';
-import { SHIKIGAMI, summonListFor } from '../data/shikigami.js';
+import { SHIKIGAMI, summonListFor, canSummonAgito as canAgitoOwned } from '../data/shikigami.js';
 
 export class Player extends Entity {
   constructor(world, opts = {}) {
     const charId = opts.charId || 'yuji';
-    const def = getCharacter(charId);
+    const def = opts.charDef || getCharacter(charId);
     const save = opts.save;
     const mods = opts.mods || defaultMods();
     const tribute = save?.data?.tribute || {};
@@ -53,11 +53,23 @@ export class Player extends Entity {
     this.speedBase = this.speed;
     this.dashSpeed = def.dashSpeed;
 
-    // ability slots
+    // ability slots (up to five; custom sorcerers only get unlocked abilities)
     this.basic = def.basic;
-    this.slots = def.abilities.slice(0, 4);
+    this.techniqueId = def.techniqueId || null;
+    this.isCustomSorcerer = !!def.isCustom;
+    if (opts.unlockedIds) {
+      const ownedIds = new Set(opts.unlockedIds);
+      this.slots = def.abilities.filter((a) => ownedIds.has(a.id));
+    } else {
+      this.slots = def.abilities.slice(0, 5);
+    }
     this.ultimate = def.ultimate;
     this.domainAbility = def.domain;
+    this.ultimateLocked = !!opts.ultimateLocked;
+    this.domainLocked = !!opts.domainLocked;
+    // transform state (mirrors actor fields; slots swap while active)
+    this.transformT = 0;
+    this.fusionPair = opts.fusionPair || opts.save?.data?.custom?.fusionPair || ['toad', 'rabbitEscape'];
     if (opts.extraAbilities) this.slots = this.slots.concat(opts.extraAbilities);
 
     // combo
@@ -99,7 +111,8 @@ export class Player extends Entity {
     this.domainUsedThisRoom = false;
     this.domainGauge = 0;
 
-    // summon selection (Megumi)
+    // summon selection (Megumi / Ten Shadows technique)
+    this.canTenShadows = charId === 'megumi' || this.techniqueId === 'tenShadows';
     this.summonIndex = 0;
     this.owned = save?.data?.unlocks?.shikigami || {};
     this.summonOptions = summonListFor(this.owned).filter((id) => id !== 'mahoraga' || this.owned.mahoraga);
@@ -121,6 +134,7 @@ export class Player extends Entity {
     // NPC sparring partners use the same kit pipeline: fall back to the
     // generic ultimate/summon handlers for actors that aren't this player.
     this.world.onUltimate = (actor, ab, angle, aimPoint) => {
+      if (ab?.type === 'transform') { activateTransform(this.world, actor, ab); return; }
       if (actor === this) this.doUltimate(ab, angle, aimPoint);
       else this.world.genericUltimate(actor, ab, angle, aimPoint);
     };
@@ -263,6 +277,7 @@ export class Player extends Entity {
     if (input.wasPressed('a2')) this.trySlot(1);
     if (input.wasPressed('a3')) this.trySlot(2);
     if (input.wasPressed('a4')) this.trySlot(3);
+    if (input.wasPressed('a5')) this.trySlot(4);
     if (input.wasPressed('ult')) this.tryUltimate();
     if (input.wasPressed('domain')) this.tryDomain();
     if (input.wasPressed('boogie')) this.tryBoogie();
@@ -327,6 +342,27 @@ export class Player extends Entity {
   trySlot(i) {
     const ab = this.slots[i];
     if (!ab || this.stunT > 0) return;
+    // Divergent Fist: pressing the same slot again is the Black Flash input.
+    if (this.divergentState && this.divergentState.ab?.id === ab.id) {
+      triggerDivergent(this.world, this);
+      return;
+    }
+    // Domain abilities living in (ultimate) slots route through domain rules.
+    if (ab.type === 'domain') {
+      const names = {
+        incomplete_shrine: 'Domain Expansion: Incomplete Shrine',
+        malevolent_shrine: 'Domain Expansion: Malevolent Shrine',
+        unlimited_void: 'Domain Expansion: Unlimited Void',
+        chimera_shadow_garden: 'Domain Expansion: Chimera Shadow Garden',
+      };
+      this.tryDomain({
+        id: ab.domainId || ab.id, domainId: ab.domainId || ab.id,
+        name: names[ab.domainId || ab.id] || ab.name, type: 'domain',
+        cost: ab.cost || 55, cd: ab.cd || 36, dur: ab.dur || 9, color: ab.color || '#c9a2ff',
+        anim: 'cast', sfx: 'domain',
+      });
+      return;
+    }
     if (this.phase) {
       if (this.phase === 'recovery' && ab.type) {
         // allow cancel from recovery
@@ -572,7 +608,13 @@ export class Player extends Entity {
   tryUltimate() {
     if (!this.ultimate || this.stunT > 0) return;
     const w = this.world;
-    if (this.charId === 'megumi') {
+    if (this.ultimateLocked) {
+      w.audio?.play('deny');
+      w.fx.text(this.x, this.y - 38, 'ULTIMATE LOCKED — TRAIN WITH NPCs', { color: '#ffb03a', scale: 0.8, life: 0.9 });
+      return;
+    }
+    if (this.transformT > 0) return;
+    if (this.canTenShadows && this.ultimate?.type === 'tenShadowsUlt') {
       const met = this.ultMeter;
       if (met < 50) {
         w.audio?.play('deny');
@@ -583,9 +625,12 @@ export class Player extends Entity {
       if (canMaho) {
         this.ultMeter = 0;
         this.spawnUltimateSummon('mahoraga');
-      } else {
+      } else if (canAgitoOwned(this.owned)) {
         this.ultMeter -= 50;
         this.spawnUltimateSummon('agito');
+      } else {
+        w.audio?.play('deny');
+        w.fx.text(this.x, this.y - 38, 'AGITO: TAME DEER · NUE · TIGER · SERPENT', { color: '#c9a2ff', scale: 0.78, life: 1.1 });
       }
       return;
     }
@@ -616,7 +661,9 @@ export class Player extends Entity {
   doUltimate(ab, angle, aimPoint) {
     const w = this.world;
     const mult = this.mods.ultDmgMult || 1;
-    switch (this.charId) {
+    if (ab?.type === 'transform') { activateTransform(w, this, ab); return; }
+    const switchId = this.isCustomSorcerer ? 'custom' : this.charId;
+    switch (switchId) {
       case 'yuji': {
         // three forced Black Flashes
         for (let i = 0; i < 3; i++) {
@@ -788,7 +835,7 @@ export class Player extends Entity {
   // Summons & domain
   // -------------------------------------------------------------------------
   cycleSummon() {
-    if (this.charId !== 'megumi') return;
+    if (!this.canTenShadows) return;
     const list = this.summonOptions || [];
     if (!list.length) return;
     this.summonIndex = (this.summonIndex + 1) % list.length;
@@ -808,12 +855,17 @@ export class Player extends Entity {
     }
   }
 
-  tryDomain() {
-    if (!this.domainAbility) {
+  tryDomain(domainDef = null) {
+    const domAb = domainDef || this.domainAbility;
+    if (!domAb) {
       this.world.fx.text(this.x, this.y - 38, 'NO DOMAIN AWAKENED', { color: '#777f8f', scale: 0.8, life: 0.8 });
       return;
     }
-    if (!this.save?.data?.unlocks?.domains?.includes(this.charId) && !this.world.allowAnyDomain) {
+    if (this.domainLocked && !domainDef) {
+      this.world.fx.text(this.x, this.y - 38, 'DOMAIN LOCKED — TRAIN WITH NPCs', { color: '#c9a2ff', scale: 0.8, life: 0.9 });
+      return;
+    }
+    if (!this.isCustomSorcerer && !domainDef && !this.save?.data?.unlocks?.domains?.includes(this.charId) && !this.world.allowAnyDomain) {
       this.world.fx.text(this.x, this.y - 38, 'DOMAIN NOT UNLOCKED', { color: '#777f8f', scale: 0.8, life: 0.8 });
       return;
     }
@@ -822,16 +874,21 @@ export class Player extends Entity {
       return;
     }
     if (this.domainCd > 0) return;
-    const cost = Math.round((this.domainAbility.cost || 60) * (this.mods.domainCostMult || 1));
+    const cost = Math.round((domAb.cost || 60) * (this.mods.domainCostMult || 1));
     if (this.ce < cost) {
       this.world.audio?.play('deny');
       this.world.fx.text(this.x, this.y - 38, `${cost} CE REQUIRED`, { color: '#7ec8ff', scale: 0.8, life: 0.8 });
       return;
     }
+    // Never burn CE/cooldown on a cast the phase machine rejects.
+    const ok = castAbility(this.world, this, domAb, this.aimAngle, { free: true });
+    if (!ok) {
+      this.world.fx.text(this.x, this.y - 38, 'FINISH CURRENT MOVE', { color: '#c9a2ff', scale: 0.75, life: 0.6 });
+      return;
+    }
     this.ce -= cost;
     this.world.stats.ceSpent += cost;
-    this.domainCd = (this.domainAbility.cd || 35) * 1;
-    castAbility(this.world, this, this.domainAbility, this.aimAngle, { free: true });
+    this.domainCd = (domAb.cd || 35) * 1;
     this.world.stats.domains++;
   }
 

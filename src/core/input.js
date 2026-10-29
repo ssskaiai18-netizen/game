@@ -20,6 +20,7 @@ export const DEFAULT_BINDS = {
   a2: ['Digit2', 'KeyI'],
   a3: ['Digit3', 'KeyO'],
   a4: ['Digit4', 'KeyP'],
+  a5: ['Digit5', 'KeyL'],
   ult: ['KeyR'],
   domain: ['KeyF'],
   interact: ['KeyE'],
@@ -49,11 +50,18 @@ export class Input {
     this.usedTouch = false;
     this.joy = { active: false, id: -1, bx: 0, by: 0, x: 0, y: 0, dx: 0, dy: 0 };
     this.pointer = { x: 320, y: 180, down: false, pressed: false, released: false };
+    this.wheelDelta = 0; // accumulated mouse-wheel / trackpad scroll (design px)
     this.binds = JSON.parse(JSON.stringify(DEFAULT_BINDS));
     this.toDesign = (x, y) => ({ x, y }); // engine installs the real transform
     this.anyInputAt = 0;
     this._handlers = [];
     this.enabled = true;
+  }
+
+  consumeWheel() {
+    const w = this.wheelDelta;
+    this.wheelDelta = 0;
+    return w;
   }
 
   attach(canvas) {
@@ -74,6 +82,9 @@ export class Input {
       this.keys.delete(e.code);
       this.releasedKeys.add(e.code);
     });
+    add(window, 'wheel', (e) => {
+      this.wheelDelta += Math.sign(e.deltaY || 0);
+    }, { passive: true });
     add(window, 'blur', () => {
       this.keys.clear();
       this.virtualDown.clear();

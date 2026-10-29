@@ -10,6 +10,7 @@ import { Toasts } from './ui/ui.js';
 import { PauseOverlay } from './ui/hud.js';
 import { TitleScene } from './scenes/title.js';
 import { CharSelectScene } from './scenes/charSelect.js';
+import { CreateScene } from './scenes/create.js';
 import { HubScene } from './scenes/hub.js';
 import { DungeonScene } from './scenes/dungeon.js';
 import { TameScene } from './scenes/tame.js';
@@ -24,7 +25,7 @@ const game = {
   audio,
   input,
   toasts: new Toasts(),
-  selectedChar: 'yuji',
+  selectedChar: 'custom',
   forceTouch: false,
   debug: false,
   started: false,
@@ -59,9 +60,7 @@ const game = {
 
 saveSystem.load();
 audio.setMuted(!saveSystem.data.settings.audio);
-if (saveSystem.data.lastChar && saveSystem.hasCharacter(saveSystem.data.lastChar)) {
-  game.selectedChar = saveSystem.data.lastChar;
-}
+game.selectedChar = saveSystem.data.custom?.created ? 'custom' : 'yuji';
 
 const engine = new Engine(canvas, game);
 game.engine = engine;
@@ -69,6 +68,7 @@ engine.debug = false;
 
 engine.register('title', (g) => new TitleScene(g));
 engine.register('charSelect', (g, p) => new CharSelectScene(g, p));
+engine.register('create', (g, p) => new CreateScene(g, p));
 engine.register('hub', (g, p) => new HubScene(g, p));
 engine.register('dungeon', (g, p) => new DungeonScene(g, p));
 engine.register('tame', (g, p) => new TameScene(g, p));

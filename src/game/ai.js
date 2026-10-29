@@ -5,7 +5,7 @@
 // ---------------------------------------------------------------------------
 
 import { clamp, dist, TAU, angleDiff } from '../core/util.js';
-import { castAbility, canCast, ceCost } from './combat.js';
+import { castAbility, canCast, ceCost, triggerDivergent, activateTransform } from './combat.js';
 import { getCharacter } from '../data/characters.js';
 
 export function updateAI(world, a, dt) {
@@ -321,6 +321,14 @@ function enterPhase2(world, a) {
 // ---------------------------------------------------------------------------
 function updateNpcAI(world, a, dt) {
   const def = getCharacter(a.charId || 'yuji');
+  if (!a.fusionPair) a.fusionPair = ['toad', 'rabbitEscape'];
+  // Divergent Fist: the NPC answers its own timing window like a player would.
+  if (a.divergentState && !a.divergentState.resolved) {
+    const st = a.divergentState;
+    if (st.t >= st.windowStart && st.t <= st.windowEnd && Math.random() < 0.06 + (a.skill ?? 0.5) * 0.12) {
+      triggerDivergent(world, a);
+    }
+  }
   a.thinkTimer -= dt;
   const p = world.player;
   if (!p || p.dead) {
@@ -361,20 +369,32 @@ function updateNpcAI(world, a, dt) {
         world.fx.ring(a.x, a.y - 10, 20, '#ff9a6b', 0.3, 2);
         world.audio?.play('reinforce');
       }
-      // ultimate
-      if ((a.ultMeter || 0) >= 100 && Math.random() < 0.4 * skill) {
+      // ultimate (transformations swap the kit instead of firing a projectile)
+      if ((a.ultMeter || 0) >= 100 && a.transformT <= 0 && Math.random() < 0.4 * skill) {
         a.ultMeter = 0;
         const ult = def.ultimate;
         if (ult) {
-          castAbility(world, a, ult, a.facing, { free: true, force: true, aimPoint: { x: p.x, y: p.y } });
+          if (ult.type === 'transform') activateTransform(world, a, ult);
+          else castAbility(world, a, ult, a.facing, { free: true, force: true, aimPoint: { x: p.x, y: p.y } });
           world.fx.text(a.x, a.y - 46, (ult.name || 'ULTIMATE').toUpperCase(), { color: ult.color || '#ffd166', scale: 1.0, life: 1.2 });
           world.scene?.showBanner?.(`${a.name} · ULTIMATE`, ult.name || '', ult.color || '#ffd166', 1.6);
           return;
         }
       }
-      // choose attack
-      const options = [...(def.abilities || [])];
+      // domain at low health, once per spar (real domain rules, incl. clashes).
+      // Transformed kits carry their domain in a slot; it is cast only here,
+      // never from the normal attack rotation (no domain spam).
+      const slotDomain = a.transformT > 0 ? a.activeAbilities(def.abilities || []).find((x) => x.type === 'domain') : null;
+      const domAb = def.domain || slotDomain;
+      if (domAb && !a._domainUsed && a.hp / a.maxHp < 0.55 && !world.domain && Math.random() < 0.3 * skill) {
+        a._domainUsed = true;
+        castAbility(world, a, domAb, a.facing, { force: true, aimPoint: { x: p.x, y: p.y } });
+        return;
+      }
+      // choose attack (Heian / King of Curses / Ascendant kits replace the base kit)
+      const options = [...a.activeAbilities(def.abilities || [])];
       for (const ab of options) {
+        if (ab.type === 'domain') continue; // domains cast only via the low-HP rule above
         if ((a.cdMap[ab.id] || 0) > 0) continue;
         if (ceCost(a, ab) > a.ce) continue;
         const range = ab.range || 40;

@@ -24,6 +24,36 @@ export const SHIKIGAMI_IDS = [
   'mahoraga',
 ];
 
+export const TECHNIQUE_IDS = ['soulFists', 'shrine', 'limitless', 'tenShadows', 'strawDoll', 'blood'];
+export const TRAINER_IDS = ['yuji', 'sukuna', 'gojo', 'megumi'];
+export const HAIR_STYLES = ['spiky', 'wild', 'bob', 'long', 'slick', 'buzz', 'messy'];
+
+export function defaultCustom() {
+  return {
+    created: false,
+    name: '',
+    techniqueId: null, // assigned once, randomly, then never rerolled
+    look: {
+      skin: '#f0c8a0', hair: '#3a2a3a', hairStyle: 'messy',
+      top: '#232a3a', topDark: '#171c28', topLight: '#2f384c',
+      bottom: '#1c2230', bottomDark: '#141926', accent: '#8f7bff', eye: '#f7f7f7', weapon: 'none',
+    },
+    unlockedAbilities: [], // ability ids of the innate technique, in unlock order
+    ultimateUnlocked: false,
+    domainUnlocked: false,
+    mastery: 0,
+    training: {
+      yuji: { lessons: 0, sparWins: 0 },
+      sukuna: { lessons: 0, sparWins: 0 },
+      gojo: { lessons: 0, sparWins: 0 },
+      megumi: { lessons: 0, sparWins: 0 },
+    },
+    trainingCredits: 0,
+    fusionPair: ['toad', 'rabbitEscape'],
+    fusionIndex: 0,
+  };
+}
+
 export const MAHORAGA_CATEGORIES = [
   'physical',
   'cut',
@@ -100,6 +130,7 @@ export function defaultSave() {
       playTime: 0,
     },
     mastery: { yuji: 0, megumi: 0, nobara: 0, gojo: 0, sukuna: 0 },
+    custom: defaultCustom(),
     highScores: [],
     seen: { intro: false, controlsDesktop: false, controlsTouch: false },
     settings: {
@@ -203,13 +234,47 @@ export function sanitize(raw) {
       .filter((e) => e && typeof e === 'object' && isFinite(e.score))
       .map((e) => ({
         score: num(e.score, 0, 0),
-        char: CHARACTER_IDS.includes(e.char) ? e.char : 'yuji',
+        char: CHARACTER_IDS.includes(e.char) || e.char === 'custom' ? e.char : 'yuji',
         rooms: num(e.rooms, 0, 0),
         arc: num(e.arc, 0, 0, 6),
         win: !!e.win,
         date: num(e.date, Date.now(), 0),
       }))
       .slice(0, 10);
+  }
+
+  // custom sorcerer (the only playable character)
+  {
+    const c = raw.custom && typeof raw.custom === 'object' ? raw.custom : {};
+    const dc = d.custom;
+    dc.created = bool(c.created, false);
+    dc.name = typeof c.name === 'string' ? c.name.slice(0, 16) : '';
+    dc.techniqueId = TECHNIQUE_IDS.includes(c.techniqueId) ? c.techniqueId : null;
+    if (c.look && typeof c.look === 'object') {
+      for (const k of Object.keys(dc.look)) if (typeof c.look[k] === 'string') dc.look[k] = c.look[k].slice(0, 24);
+      if (!HAIR_STYLES.includes(dc.look.hairStyle)) dc.look.hairStyle = 'messy';
+      dc.look.weapon = 'none';
+    }
+    dc.unlockedAbilities = Array.isArray(c.unlockedAbilities)
+      ? Array.from(new Set(c.unlockedAbilities.filter((x) => typeof x === 'string')))
+      : [];
+    dc.ultimateUnlocked = bool(c.ultimateUnlocked, false);
+    dc.domainUnlocked = bool(c.domainUnlocked, false);
+    dc.mastery = num(c.mastery, 0, 0, 9999);
+    dc.trainingCredits = num(c.trainingCredits, 0, 0, 999);
+    if (c.training && typeof c.training === 'object') {
+      for (const t of TRAINER_IDS) {
+        const tr = c.training[t];
+        if (tr && typeof tr === 'object') {
+          dc.training[t] = { lessons: num(tr.lessons, 0, 0, 99), sparWins: num(tr.sparWins, 0, 0, 999) };
+        }
+      }
+    }
+    if (Array.isArray(c.fusionPair)) {
+      const fp = c.fusionPair.filter((x) => SHIKIGAMI_IDS.includes(x));
+      if (fp.length === 2 && fp[0] !== fp[1]) dc.fusionPair = fp;
+    }
+    dc.fusionIndex = num(c.fusionIndex, 0, 0, 99);
   }
 
   d.seen = Object.assign({}, d.seen, raw.seen && typeof raw.seen === 'object' ? raw.seen : {});

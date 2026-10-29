@@ -432,6 +432,8 @@ function step(world, seconds, dt = 1 / 60) {
 {
   const { world, save } = makeWorld();
   save.data.unlocks.shikigami.mahoraga = true;
+  // Agito gate (update): Round Deer + Nue + Mourning Tiger + Great Serpent
+  for (const id of ['roundDeer', 'nue', 'mourningTiger', 'greatSerpent']) save.data.unlocks.shikigami[id] = true;
   const p = makePlayer(world, save, 'megumi');
   p.ultMeter = 40;
   p.charId = 'megumi';
@@ -542,6 +544,105 @@ function step(world, seconds, dt = 1 / 60) {
   nue.hp = 1;
   world.damage(nue, 999, { category: 'physical' });
   ok(!nue.dead && nue.hp > 0, 'Totality Path gives a shikigami a second life', `hp=${nue.hp}`);
+}
+
+// ---------------------------------------------------------------------------
+// Update coverage: custom sorcerer, Divergent Fist timing, transformations,
+// NPC-slot domains, fusions, Chimera copies, and the new Agito gate.
+// ---------------------------------------------------------------------------
+const dummyE = (world, x, y) => {
+  const e = world.spawnEnemy(ENEMIES.curseBrute, x, y, { hpMult: 8 });
+  e.speed = 0; e.brain = 'none'; e.aiTimer = 999; e.thinkTimer = 999; e.invulnT = 0;
+  return e;
+};
+{
+  const { ensureTechnique: ensureT, applyTrainingCredit } = await import('../src/data/techniques.js');
+  const { SaveSystem: SS, defaultSave: DS } = await import('../src/core/save.js');
+  const cs = new SS(null); cs.data = DS();
+  const t1 = ensureT(cs);
+  ok(t1 === ensureT(cs), 'innate technique is assigned once and persists');
+  ok(cs.data.custom.unlockedAbilities.length === 2, 'custom sorcerer starts with exactly 2 abilities');
+  ok(!!applyTrainingCredit(cs, 'yuji'), 'trainer win unlocks the next own-technique ability');
+  ok(cs.data.custom.unlockedAbilities.length === 3, 'third ability unlocked in fixed order');
+}
+{
+  const { castAbility: cast2, triggerDivergent } = await import('../src/game/combat.js');
+  const { CHARACTERS: CH } = await import('../src/data/characters.js');
+  for (const mode of ['bf', 'normal', 'early']) {
+    const { world, save } = makeWorld();
+    const p = makePlayer(world, save, 'yuji');
+    const e = dummyE(world, p.x + 26, p.y);
+    step(world, 0.7);
+    const hp0 = e.hp;
+    p.aimAngle = 0;
+    cast2(world, p, CH.yuji.abilities[0], 0, { force: true, free: true });
+    if (mode === 'bf') { for (let i = 0; i < 15; i++) world.update(1 / 60); triggerDivergent(world, p); step(world, 0.5); }
+    else if (mode === 'early') { triggerDivergent(world, p); step(world, 1.4); }
+    else step(world, 1.4);
+    const dealt = hp0 - e.hp;
+    if (mode === 'bf') ok(dealt > 30, 'Divergent Fist: correctly timed second press triggers Black Flash', dealt);
+    if (mode === 'normal') ok(dealt > 5 && dealt <= 60, 'Divergent Fist: no press = normal delayed impact', dealt);
+    if (mode === 'early') ok(dealt <= 60, 'Divergent Fist: early mash cannot trigger Black Flash', dealt);
+  }
+}
+{
+  const { world, save } = makeWorld();
+  const p = makePlayer(world, save, 'sukuna');
+  step(world, 0.7);
+  p.ultMeter = 100; p.tryUltimate(); step(world, 0.5);
+  ok(p.transformT > 0 && p.slots[0].name === 'World-Cutting Slash' && p.look.fourArms === true, 'Heian form swaps kit and look');
+  p.transformT = 0.01; step(world, 0.2);
+  ok(p.transformT <= 0 && p.slots[0].name === 'Dismantle' && !p.look.fourArms, 'Heian form expiry restores base kit and look');
+  p.ultMeter = 100; p.tryUltimate(); step(world, 1.5); p.ce = 999; p.domainCd = 0; p.trySlot(4); step(world, 0.5);
+  if (!world.domain) { p.trySlot(4); step(world, 0.5); }
+  ok(world.domain?.id === 'malevolent_shrine', 'Malevolent Shrine casts from the Heian slot');
+}
+{
+  const { world, save } = makeWorld();
+  const p = makePlayer(world, save, 'gojo');
+  step(world, 0.7);
+  p.ultMeter = 100; p.tryUltimate(); step(world, 0.5);
+  ok(p.slots[2].type === 'domain' && p.slots[4].name === 'Infinity', 'Limitless Ascendant swaps kit');
+  p.ce = 999; step(world, 1); p.trySlot(4); step(world, 0.2);
+  ok(p.infinityT > 0, 'Infinity state activates with its own timer', p.infinityT);
+}
+{
+  const { startDomain: sd } = await import('../src/game/domain.js');
+  const { world, save } = makeWorld();
+  const p = makePlayer(world, save, 'yuji');
+  const e = dummyE(world, p.x + 40, p.y);
+  step(world, 0.7);
+  const hp0 = e.hp;
+  sd(world, p, { id: 'incomplete_shrine', domainId: 'incomplete_shrine', name: 'Domain Expansion: Incomplete Shrine', type: 'domain', cost: 0, cd: 36, dur: 3, color: '#c0273a' });
+  let stuns = 0, was = false;
+  for (let i = 0; i < 200; i++) { world.update(1 / 60); if (e.stunT > 0 && !was) stuns++; was = e.stunT > 0; }
+  ok(e.hp < hp0, 'Incomplete Shrine damages over time');
+  ok(stuns >= 1 && stuns <= 5, 'Incomplete Shrine stuns but cannot stun-lock', stuns);
+}
+{
+  const { summonFusion: fuse } = await import('../src/game/summon.js');
+  const { startDomain: sd, endDomain: ed } = await import('../src/game/domain.js');
+  const { world, save } = makeWorld();
+  for (const id of ['toad', 'rabbitEscape', 'nue', 'roundDeer', 'mourningTiger', 'greatSerpent']) save.data.unlocks.shikigami[id] = true;
+  const p = makePlayer(world, save, 'megumi');
+  step(world, 0.7);
+  p.fusionPair = ['toad', 'rabbitEscape'];
+  const fused = fuse(world, p, {});
+  ok(Array.isArray(fused) && fused.length === 5 && fused[0].isFusionSummon, 'Toad+Rabbit fusion spawns the winged toad swarm');
+  const { world: w2, save: s2 } = makeWorld();
+  const p2 = makePlayer(w2, s2, 'megumi');
+  p2.ultMeter = 60; p2.tryUltimate();
+  ok(p2.ultMeter === 60, 'Agito blocked without deer+nue+tiger+serpent tamed');
+  summonShikigami(world, p, 'divineDogs');
+  sd(world, p, p.domainAbility);
+  step(world, 1.2);
+  summonShikigami(world, p, 'divineDogs');
+  const copies = world.summons.filter((x) => x.isShadowCopy && !x.dead);
+  ok(copies.length > 0, 'Garden re-summon creates black shadow copies');
+  const before = world.summons.filter((x) => !x.isShadowCopy && !x.dead).length;
+  ed(world);
+  ok(world.summons.filter((x) => x.isShadowCopy && !x.dead).length === 0, 'shadow copies are removed when the Garden ends');
+  ok(world.summons.filter((x) => !x.dead).length === before, 'pre-existing summons survive Garden cleanup');
 }
 
 console.log(`\nsystems: ${pass} passed, ${fail} failed`);
